@@ -4,6 +4,7 @@ import { commands } from "./commands/index.js";
 import { connectDatabase } from "./db/connection.js";
 import { logger } from "./lib/logger.js";
 import { config } from "./config.js";
+import { startWeeklyResetScheduler } from "./lib/weeklyReset.js";
 import onReady from "./events/ready.js";
 import onMessageCreate from "./events/messageCreate.js";
 import onInteractionCreate from "./events/interactionCreate.js";
@@ -26,6 +27,7 @@ client.on(Events.Error, (err) => logger.error({ err }, "Discord client error"));
 client.on(Events.Warn, (msg) => logger.warn({ msg }, "Discord client warning"));
 
 await connectDatabase();
+await startWeeklyResetScheduler();
 
 logger.info("Logging in to Discord...");
 await client.login(config.token);

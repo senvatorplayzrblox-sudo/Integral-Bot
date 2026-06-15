@@ -61,7 +61,7 @@ export async function getOrCreate(guildId: string, userId: string): Promise<User
   const doc = await UserStatsModel.findOneAndUpdate(
     { guildId, userId },
     { $setOnInsert: { guildId, userId } },
-    { upsert: true, new: true },
+    { upsert: true, returnDocument: "after" },
   );
   return toPlain(doc);
 }
