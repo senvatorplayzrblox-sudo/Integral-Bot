@@ -12,6 +12,7 @@
   "dependencies": {
     "@discordjs/rest": "^2.5.0",
     "discord.js": "^14.21.0",
+    "mongoose": "^9.7.0",
     "pino": "^9.14.0",
     "pino-pretty": "^13.1.3"
   },

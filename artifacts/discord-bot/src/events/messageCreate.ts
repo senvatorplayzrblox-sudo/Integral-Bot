@@ -3,22 +3,19 @@ import { logger } from "../lib/logger.js";
 import { getOrCreate, save } from "../db/models/GuildMember.js";
 import { config, levelFromXp, xpForNextLevel } from "../config.js";
 
-const xpCooldowns = new Map<string, number>();
-
 export default async function onMessageCreate(message: Message): Promise<void> {
   if (message.author.bot || !message.inGuild()) return;
 
   const guildId = message.guildId;
   const userId = message.author.id;
-  const now = Date.now();
-  const cooldownKey = `${guildId}:${userId}`;
+  const now = new Date();
 
   const stats = await getOrCreate(guildId, userId);
   stats.messages++;
   stats.weeklyMessages++;
 
-  const lastXpAt = xpCooldowns.get(cooldownKey) ?? 0;
-  const onCooldown = now - lastXpAt < config.xp.cooldownSeconds * 1000;
+  const msSinceLastXP = now.getTime() - stats.lastMessageXP.getTime();
+  const onCooldown = msSinceLastXP < config.xp.cooldownSeconds * 1000;
 
   if (!onCooldown) {
     const gained =
@@ -26,19 +23,16 @@ export default async function onMessageCreate(message: Message): Promise<void> {
         Math.random() * (config.xp.maxPerMessage - config.xp.minPerMessage + 1),
       ) + config.xp.minPerMessage;
 
-    xpCooldowns.set(cooldownKey, now);
-
     const oldLevel = stats.level;
     stats.xp += gained;
-    const newLevel = levelFromXp(stats.xp);
+    stats.level = levelFromXp(stats.xp);
+    stats.lastMessageXP = now;
 
-    if (newLevel > oldLevel) {
-      stats.level = newLevel;
-      await sendLevelUp(message, newLevel);
+    if (stats.level > oldLevel) {
+      await sendLevelUp(message, stats.level);
     }
   }
 
-  stats.lastMessageTimestamp = now;
   await save(stats);
 }
 
