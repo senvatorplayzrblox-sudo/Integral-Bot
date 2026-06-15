@@ -50,3 +50,8 @@ externalPort = 80
 [[ports]]
 localPort = 8082
 externalPort = 3000
+
+[userenv]
+
+[userenv.shared]
+DISCORD_CLIENT_ID = "1516043120876322937"
