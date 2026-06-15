@@ -10,6 +10,7 @@ export interface UserStats {
   voiceMinutes: number;
   weeklyVoiceMinutes: number;
   lastMessageXP: Date;
+  voiceJoinedAt: Date | null;
 }
 
 type UserStatsDocument = UserStats & Document;
@@ -25,6 +26,7 @@ const userStatsSchema = new Schema<UserStatsDocument>(
     voiceMinutes: { type: Number, default: 0 },
     weeklyVoiceMinutes: { type: Number, default: 0 },
     lastMessageXP: { type: Date, default: () => new Date(0) },
+    voiceJoinedAt: { type: Date, default: null },
   },
   { timestamps: true },
 );
@@ -51,6 +53,7 @@ function toPlain(doc: UserStatsDocument): UserStats {
     voiceMinutes: doc.voiceMinutes,
     weeklyVoiceMinutes: doc.weeklyVoiceMinutes,
     lastMessageXP: doc.lastMessageXP,
+    voiceJoinedAt: doc.voiceJoinedAt,
   };
 }
 
@@ -81,6 +84,63 @@ export async function save(stats: UserStats): Promise<void> {
   );
 }
 
+// ── Voice session helpers ────────────────────────────────────────────────────
+
+export async function startVoiceSession(
+  guildId: string,
+  userId: string,
+  joinedAt: Date,
+): Promise<void> {
+  await UserStatsModel.updateOne(
+    { guildId, userId },
+    { $set: { voiceJoinedAt: joinedAt }, $setOnInsert: { guildId, userId } },
+    { upsert: true },
+  );
+}
+
+export async function endVoiceSession(
+  guildId: string,
+  userId: string,
+  now: Date,
+): Promise<number> {
+  const doc = await UserStatsModel.findOne({ guildId, userId }).select("voiceJoinedAt");
+  if (!doc?.voiceJoinedAt) return 0;
+
+  const minutes = Math.floor((now.getTime() - doc.voiceJoinedAt.getTime()) / 60_000);
+
+  await UserStatsModel.updateOne(
+    { guildId, userId },
+    minutes > 0
+      ? { $inc: { voiceMinutes: minutes, weeklyVoiceMinutes: minutes }, $unset: { voiceJoinedAt: 1 } }
+      : { $unset: { voiceJoinedAt: 1 } },
+  );
+
+  return minutes;
+}
+
+export async function clearAllVoiceSessions(guildId: string): Promise<void> {
+  await UserStatsModel.updateMany({ guildId }, { $unset: { voiceJoinedAt: 1 } });
+}
+
+export async function bulkStartVoiceSessions(
+  guildId: string,
+  userIds: string[],
+  joinedAt: Date,
+): Promise<void> {
+  if (userIds.length === 0) return;
+  await UserStatsModel.bulkWrite(
+    userIds.map((userId) => ({
+      updateOne: {
+        filter: { guildId, userId },
+        update: { $set: { voiceJoinedAt: joinedAt }, $setOnInsert: { guildId, userId } },
+        upsert: true,
+      },
+    })),
+  );
+}
+
+// ── Leaderboard / rank queries ───────────────────────────────────────────────
+
 export async function countGuildMembers(guildId: string): Promise<number> {
   return UserStatsModel.countDocuments({ guildId });
 }
@@ -90,12 +150,7 @@ export async function getTopByXp(
   limit: number,
   offset: number,
 ): Promise<UserStats[]> {
-  const docs = await UserStatsModel.find({ guildId })
-    .sort({ xp: -1 })
-    .skip(offset)
-    .limit(limit)
-    .lean<UserStats[]>();
-  return docs;
+  return UserStatsModel.find({ guildId }).sort({ xp: -1 }).skip(offset).limit(limit).lean<UserStats[]>();
 }
 
 export async function getTopByMessages(
@@ -103,12 +158,7 @@ export async function getTopByMessages(
   limit: number,
   offset: number,
 ): Promise<UserStats[]> {
-  const docs = await UserStatsModel.find({ guildId })
-    .sort({ messages: -1 })
-    .skip(offset)
-    .limit(limit)
-    .lean<UserStats[]>();
-  return docs;
+  return UserStatsModel.find({ guildId }).sort({ messages: -1 }).skip(offset).limit(limit).lean<UserStats[]>();
 }
 
 export async function getTopByVoice(
@@ -116,12 +166,7 @@ export async function getTopByVoice(
   limit: number,
   offset: number,
 ): Promise<UserStats[]> {
-  const docs = await UserStatsModel.find({ guildId })
-    .sort({ voiceMinutes: -1 })
-    .skip(offset)
-    .limit(limit)
-    .lean<UserStats[]>();
-  return docs;
+  return UserStatsModel.find({ guildId }).sort({ voiceMinutes: -1 }).skip(offset).limit(limit).lean<UserStats[]>();
 }
 
 export async function getTopByWeeklyMessages(
@@ -129,12 +174,7 @@ export async function getTopByWeeklyMessages(
   limit: number,
   offset: number,
 ): Promise<UserStats[]> {
-  const docs = await UserStatsModel.find({ guildId })
-    .sort({ weeklyMessages: -1 })
-    .skip(offset)
-    .limit(limit)
-    .lean<UserStats[]>();
-  return docs;
+  return UserStatsModel.find({ guildId }).sort({ weeklyMessages: -1 }).skip(offset).limit(limit).lean<UserStats[]>();
 }
 
 export async function getTopByWeeklyVoice(
@@ -142,12 +182,7 @@ export async function getTopByWeeklyVoice(
   limit: number,
   offset: number,
 ): Promise<UserStats[]> {
-  const docs = await UserStatsModel.find({ guildId })
-    .sort({ weeklyVoiceMinutes: -1 })
-    .skip(offset)
-    .limit(limit)
-    .lean<UserStats[]>();
-  return docs;
+  return UserStatsModel.find({ guildId }).sort({ weeklyVoiceMinutes: -1 }).skip(offset).limit(limit).lean<UserStats[]>();
 }
 
 export async function getRankByXp(guildId: string, userId: string): Promise<number> {
@@ -160,19 +195,13 @@ export async function getRankByXp(guildId: string, userId: string): Promise<numb
 export async function getRankByWeeklyMessages(guildId: string, userId: string): Promise<number> {
   const stats = await UserStatsModel.findOne({ guildId, userId }).lean<UserStats>();
   if (!stats) return -1;
-  const above = await UserStatsModel.countDocuments({
-    guildId,
-    weeklyMessages: { $gt: stats.weeklyMessages },
-  });
+  const above = await UserStatsModel.countDocuments({ guildId, weeklyMessages: { $gt: stats.weeklyMessages } });
   return above + 1;
 }
 
 export async function getRankByWeeklyVoice(guildId: string, userId: string): Promise<number> {
   const stats = await UserStatsModel.findOne({ guildId, userId }).lean<UserStats>();
   if (!stats) return -1;
-  const above = await UserStatsModel.countDocuments({
-    guildId,
-    weeklyVoiceMinutes: { $gt: stats.weeklyVoiceMinutes },
-  });
+  const above = await UserStatsModel.countDocuments({ guildId, weeklyVoiceMinutes: { $gt: stats.weeklyVoiceMinutes } });
   return above + 1;
 }
