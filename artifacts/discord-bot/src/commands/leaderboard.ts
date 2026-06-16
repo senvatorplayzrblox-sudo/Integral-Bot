@@ -17,7 +17,7 @@ import {
 } from "../db/models/GuildMember.js";
 
 const PAGE_SIZE = 10;
-const MAX_PAGES = 10;
+const MAX_PAGES = 10; // top 100 total
 
 type Category = "levels" | "messages" | "voice" | "weekly-messages" | "weekly-voice";
 
@@ -32,42 +32,39 @@ const CATEGORY_LABELS: Record<Category, string> = {
 async function fetchPage(guildId: string, category: Category, page: number): Promise<UserStats[]> {
   const offset = page * PAGE_SIZE;
   switch (category) {
-    case "levels":
-      return getTopByXp(guildId, PAGE_SIZE, offset);
-    case "messages":
-      return getTopByMessages(guildId, PAGE_SIZE, offset);
-    case "voice":
-      return getTopByVoice(guildId, PAGE_SIZE, offset);
-    case "weekly-messages":
-      return getTopByWeeklyMessages(guildId, PAGE_SIZE, offset);
-    case "weekly-voice":
-      return getTopByWeeklyVoice(guildId, PAGE_SIZE, offset);
+    case "levels":          return getTopByXp(guildId, PAGE_SIZE, offset);
+    case "messages":        return getTopByMessages(guildId, PAGE_SIZE, offset);
+    case "voice":           return getTopByVoice(guildId, PAGE_SIZE, offset);
+    case "weekly-messages": return getTopByWeeklyMessages(guildId, PAGE_SIZE, offset);
+    case "weekly-voice":    return getTopByWeeklyVoice(guildId, PAGE_SIZE, offset);
   }
+}
+
+function formatVoice(minutes: number): string {
+  const m = Math.max(0, Math.floor(minutes));
+  const h = Math.floor(m / 60);
+  return h > 0 ? `${h}h ${m % 60}m` : `${m}m`;
 }
 
 function formatRow(stats: UserStats, rank: number, category: Category): string {
-  const n = String(rank).padStart(3, " ");
+  const medal = rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : `\`#${rank}\``;
+  const mention = `<@${stats.userId}>`;
+
   switch (category) {
     case "levels":
-      return `${n}. ${stats.userId.padEnd(20)} Lv ${String(stats.level).padStart(3)}  ${stats.xp.toLocaleString()} XP`;
+      return `${medal} ${mention} — Level **${stats.level}** · ${(stats.xp ?? 0).toLocaleString()} XP`;
     case "messages":
-      return `${n}. ${stats.userId.padEnd(20)} ${stats.messages.toLocaleString()} msgs`;
-    case "voice": {
-      const h = Math.floor(stats.voiceMinutes / 60);
-      const m = stats.voiceMinutes % 60;
-      return `${n}. ${stats.userId.padEnd(20)} ${h > 0 ? `${h}h ${m}m` : `${m}m`}`;
-    }
+      return `${medal} ${mention} — **${(stats.messages ?? 0).toLocaleString()}** messages`;
+    case "voice":
+      return `${medal} ${mention} — **${formatVoice(stats.voiceMinutes ?? 0)}**`;
     case "weekly-messages":
-      return `${n}. ${stats.userId.padEnd(20)} ${stats.weeklyMessages.toLocaleString()} msgs`;
-    case "weekly-voice": {
-      const h = Math.floor(stats.weeklyVoiceMinutes / 60);
-      const m = stats.weeklyVoiceMinutes % 60;
-      return `${n}. ${stats.userId.padEnd(20)} ${h > 0 ? `${h}h ${m}m` : `${m}m`}`;
-    }
+      return `${medal} ${mention} — **${(stats.weeklyMessages ?? 0).toLocaleString()}** messages`;
+    case "weekly-voice":
+      return `${medal} ${mention} — **${formatVoice(stats.weeklyVoiceMinutes ?? 0)}**`;
   }
 }
 
-function buildRow(page: number, hasMore: boolean): ActionRowBuilder<ButtonBuilder> {
+function buildButtons(page: number, hasMore: boolean): ActionRowBuilder<ButtonBuilder> {
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
       .setCustomId("lb_prev")
@@ -92,11 +89,11 @@ export const leaderboard: Command = {
         .setDescription("Leaderboard category (default: Levels)")
         .setRequired(false)
         .addChoices(
-          { name: "Levels", value: "levels" },
-          { name: "Messages", value: "messages" },
-          { name: "Voice", value: "voice" },
+          { name: "Levels",          value: "levels" },
+          { name: "Messages",        value: "messages" },
+          { name: "Voice",           value: "voice" },
           { name: "Weekly Messages", value: "weekly-messages" },
-          { name: "Weekly Voice", value: "weekly-voice" },
+          { name: "Weekly Voice",    value: "weekly-voice" },
         ),
     ),
 
@@ -107,7 +104,10 @@ export const leaderboard: Command = {
     const category = (interaction.options.getString("category") ?? "levels") as Category;
     let page = 0;
 
-    async function render(p: number): Promise<{ content: string; components: ActionRowBuilder<ButtonBuilder>[] }> {
+    async function render(p: number): Promise<{
+      content: string;
+      components: ActionRowBuilder<ButtonBuilder>[];
+    }> {
       const users = await fetchPage(guildId, category, p);
       const startRank = p * PAGE_SIZE + 1;
       const hasMore = users.length === PAGE_SIZE && p + 1 < MAX_PAGES;
@@ -120,10 +120,13 @@ export const leaderboard: Command = {
       }
 
       const rows = users.map((u, i) => formatRow(u, startRank + i, category));
-      const header = `${CATEGORY_LABELS[category]} Leaderboard — Page ${p + 1}`;
-      const content = `**${header}**\n\`\`\`\n${rows.join("\n")}\n\`\`\``;
+      const totalPages = Math.min(MAX_PAGES, Math.ceil(users.length / PAGE_SIZE) + p);
+      const header = `**${CATEGORY_LABELS[category]} Leaderboard** — Page ${p + 1}`;
 
-      return { content, components: [buildRow(p, hasMore)] };
+      return {
+        content: `${header}\n\n${rows.join("\n")}`,
+        components: [buildButtons(p, hasMore)],
+      };
     }
 
     const initial = await render(page);
@@ -152,7 +155,7 @@ export const leaderboard: Command = {
         }
         await interaction.editReply(final);
       } catch {
-        // Interaction may have expired
+        // Interaction expired — nothing to do
       }
     });
   },

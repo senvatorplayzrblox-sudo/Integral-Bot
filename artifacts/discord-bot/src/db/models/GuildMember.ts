@@ -205,3 +205,17 @@ export async function getRankByWeeklyVoice(guildId: string, userId: string): Pro
   const above = await UserStatsModel.countDocuments({ guildId, weeklyVoiceMinutes: { $gt: stats.weeklyVoiceMinutes } });
   return above + 1;
 }
+
+export async function bulkEnsureMembers(guildId: string, userIds: string[]): Promise<void> {
+  if (userIds.length === 0) return;
+  await UserStatsModel.bulkWrite(
+    userIds.map((userId) => ({
+      updateOne: {
+        filter: { guildId, userId },
+        update: { $setOnInsert: { guildId, userId } },
+        upsert: true,
+      },
+    })),
+    { ordered: false },
+  );
+}
