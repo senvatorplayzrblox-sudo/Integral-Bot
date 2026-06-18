@@ -6,12 +6,12 @@ export const config = {
   xp: {
     minPerMessage: 15,
     maxPerMessage: 25,
-    cooldownSeconds: 60,
+    cooldownSeconds: 5,
   },
 } as const;
 
 export function xpForNextLevel(level: number): number {
-  return 5 * level * level + 50 * level + 100;
+  return (5 * level * level + 50 * level + 100) * 2;
 }
 
 export function levelFromXp(xp: number): number {

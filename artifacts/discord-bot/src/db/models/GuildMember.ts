@@ -38,7 +38,7 @@ userStatsSchema.index({ guildId: 1, voiceMinutes: -1 });
 userStatsSchema.index({ guildId: 1, weeklyMessages: -1 });
 userStatsSchema.index({ guildId: 1, weeklyVoiceMinutes: -1 });
 
-const UserStatsModel: Model<UserStatsDocument> =
+  export const UserStatsModel: Model<UserStatsDocument> =
   mongoose.models["UserStats"] ??
   mongoose.model<UserStatsDocument>("UserStats", userStatsSchema);
 

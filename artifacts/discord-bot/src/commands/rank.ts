@@ -1,4 +1,5 @@
-import { EmbedBuilder, SlashCommandBuilder, type ChatInputCommandInteraction } from "discord.js";
+import { getGuildConfig } from "../db/models/GuildConfig.js";
+import { SlashCommandBuilder, type ChatInputCommandInteraction } from "discord.js";
 import type { Command } from "../types.js";
 import {
   getOrCreate,
@@ -28,6 +29,18 @@ export const rank: Command = {
     ),
 
   async execute(interaction: ChatInputCommandInteraction): Promise<void> {
+    const guildConfig = await getGuildConfig(interaction.guildId!);
+
+if (
+  guildConfig.botChannelId &&
+  interaction.channelId !== guildConfig.botChannelId
+) {
+  await interaction.reply({
+    content: `❌ Use bot commands in <#${guildConfig.botChannelId}>`,
+    ephemeral: true,
+  });
+  return;
+}
     await interaction.deferReply();
 
     const target = interaction.options.getUser("user") ?? interaction.user;
@@ -60,37 +73,25 @@ export const rank: Command = {
       getRankByWeeklyVoice(guildId, target.id),
     ]);
 
-    const embed = new EmbedBuilder()
-      .setTitle(`${displayName}'s Stats`)
-      .setThumbnail(target.displayAvatarURL())
-      .setColor(0x5865f2)
-      .addFields(
-        { name: "Level", value: `**${level}**`, inline: true },
-        { name: "Total XP", value: `**${xp.toLocaleString()}**`, inline: true },
-        { name: "Rank", value: `**#${rankXp}** / ${total}`, inline: true },
-        {
-          name: "XP Progress",
-          value: `${xpInLevel.toLocaleString()} / ${xpNeeded.toLocaleString()} to level ${level + 1}`,
-          inline: false,
-        },
-        {
-          name: "Messages",
-          value: [
-            `All-time: **${messages.toLocaleString()}**`,
-            `This week: **${weeklyMessages.toLocaleString()}** — rank **#${rankWeeklyMsg}**`,
-          ].join("\n"),
-          inline: true,
-        },
-        {
-          name: "Voice",
-          value: [
-            `All-time: **${formatVoice(voiceMinutes)}**`,
-            `This week: **${formatVoice(weeklyVoiceMinutes)}** — rank **#${rankWeeklyVoice}**`,
-          ].join("\n"),
-          inline: true,
-        },
-      );
+    const percent = Math.min(
+  100,
+  Math.round((xpInLevel / xpNeeded) * 1000) / 10
+);
 
-    await interaction.editReply({ embeds: [embed] });
+    const filled = Math.round(percent / 10);
+    const progressBar =
+      "█".repeat(filled) +
+      "░".repeat(10 - filled);
+    const content =
+`## 📊 **∫ ${displayName}'s Stats**
+**Level ${level}** • \`${xpInLevel} / ${xpNeeded} XP\` • \`${percent}%\`
+${progressBar}
+
+**🏆 Leaderboard Rank:** \`#${rankXp}\`
+**📅 Weekly Rank:** \`💬 #${rankWeeklyMsg}\` • \`🎙️ #${rankWeeklyVoice}\``;
+
+    await interaction.editReply({
+      content,
+    });
   },
 };

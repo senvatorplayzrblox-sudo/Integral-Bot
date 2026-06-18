@@ -1,25 +1,81 @@
-import type { Interaction } from "discord.js";
+import { EmbedBuilder, type Interaction } from "discord.js";
 import { logger } from "../lib/logger.js";
 import type { IntegralClient } from "../client.js";
+import { getGuildConfig } from "../db/models/GuildConfig.js";
 
 export default async function onInteractionCreate(
   client: IntegralClient,
   interaction: Interaction,
 ): Promise<void> {
+
   if (!interaction.isChatInputCommand()) return;
 
   const command = client.commands.get(interaction.commandName);
+
   if (!command) {
-    logger.warn({ commandName: interaction.commandName }, "Unknown command received");
-    await interaction.reply({ content: "Unknown command.", ephemeral: true });
+    logger.warn(
+      { commandName: interaction.commandName },
+      "Unknown command received",
+    );
+
+    await interaction.reply({
+      content: "Unknown command.",
+      ephemeral: true,
+    });
+
     return;
   }
 
+  const guildConfig = await getGuildConfig(interaction.guildId!);
+
+  if (
+    guildConfig.botChannelIds &&
+    guildConfig.botChannelIds.length > 0
+  ) {
+
+    if (
+      !guildConfig.botChannelIds.includes(
+        interaction.channelId,
+      )
+    ) {
+
+      const embed = new EmbedBuilder()
+        .setColor("Red")
+        .setTitle("❌ Wrong Channel")
+        .setDescription(
+          `Bot commands can only be used in:\n\n${guildConfig.botChannelIds
+            .map(id => `<#${id}>`)
+            .join("\n")}`,
+        );
+
+      await interaction.reply({
+        embeds: [embed],
+        ephemeral: true,
+      });
+
+      return;
+    }
+  }
+
   try {
+
     await command.execute(interaction);
+
   } catch (err) {
-    logger.error({ err, commandName: interaction.commandName }, "Command execution error");
-    const payload = { content: "Something went wrong while running that command.", ephemeral: true };
+
+    logger.error(
+      {
+        err,
+        commandName: interaction.commandName,
+      },
+      "Command execution error",
+    );
+
+    const payload = {
+      content: "Something went wrong while running that command.",
+      ephemeral: true,
+    };
+
     if (interaction.replied || interaction.deferred) {
       await interaction.followUp(payload);
     } else {
