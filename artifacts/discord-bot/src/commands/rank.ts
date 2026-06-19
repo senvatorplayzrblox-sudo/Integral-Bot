@@ -99,16 +99,11 @@ if (liveDoc?.voiceJoinedAt) {
       "░".repeat(10 - filled);
     const content =
 `## 📊 **∫ ${displayName}'s Stats**
-
 **Level ${level}** • \`${xpInLevel} / ${xpNeeded} XP\` • \`${percent}%\`
 ${progressBar}
 
-**💬 Messages:** \`${messages.toLocaleString()}\`
-**🎙️ Voice:** \`${formatVoice(voiceMinutes)}\`
-
 **🏆 Leaderboard Rank:** \`#${rankXp}\`
 **📅 Weekly Rank:** \`💬 #${rankWeeklyMsg}\` • \`🎙️ #${rankWeeklyVoice}\``;
-
     await interaction.editReply({
       content,
     });
