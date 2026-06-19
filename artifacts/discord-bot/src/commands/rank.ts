@@ -7,6 +7,7 @@ import {
   getRankByWeeklyMessages,
   getRankByWeeklyVoice,
   countGuildMembers,
+  UserStatsModel,
 } from "../db/models/GuildMember.js";
 import { levelFromXp, xpForNextLevel, xpInCurrentLevel } from "../config.js";
 
@@ -64,7 +65,21 @@ if (
 
     const messages = stats.messages ?? 0;
     const weeklyMessages = stats.weeklyMessages ?? 0;
-    const voiceMinutes = stats.voiceMinutes ?? 0;
+    let liveVoiceMinutes = stats.voiceMinutes ?? 0;
+
+const liveDoc = await UserStatsModel.findOne({
+  guildId,
+  userId: target.id,
+}).lean();
+
+if (liveDoc?.voiceJoinedAt) {
+  const extraMinutes = Math.floor(
+    (Date.now() - new Date(liveDoc.voiceJoinedAt).getTime()) / 60000,
+  );
+
+  liveVoiceMinutes += extraMinutes;
+}
+    const voiceMinutes = liveVoiceMinutes;
     const weeklyVoiceMinutes = stats.weeklyVoiceMinutes ?? 0;
 
     const [rankXp, rankWeeklyMsg, rankWeeklyVoice] = await Promise.all([
@@ -84,8 +99,12 @@ if (
       "░".repeat(10 - filled);
     const content =
 `## 📊 **∫ ${displayName}'s Stats**
+
 **Level ${level}** • \`${xpInLevel} / ${xpNeeded} XP\` • \`${percent}%\`
 ${progressBar}
+
+**💬 Messages:** \`${messages.toLocaleString()}\`
+**🎙️ Voice:** \`${formatVoice(voiceMinutes)}\`
 
 **🏆 Leaderboard Rank:** \`#${rankXp}\`
 **📅 Weekly Rank:** \`💬 #${rankWeeklyMsg}\` • \`🎙️ #${rankWeeklyVoice}\``;
