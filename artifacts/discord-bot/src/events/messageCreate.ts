@@ -58,7 +58,7 @@ await save(stats);
 
 async function sendLevelUp(message: Message, newLevel: number): Promise<void> {
   const text =
-  `> <:globe:1516671809666158622> ${message.author} Congratulations! You Just Reached Level ${newLevel}!
+  `> <:globe:1516671809666158622> ${message.author} Congratulations! You Just Reached **Level ${newLevel}**!
 
   <:shine:1516672794069438515> Keep Grinding In <#1508093901838483536> To Earn More XP And Climb Higher On The Leaderboards.
 
