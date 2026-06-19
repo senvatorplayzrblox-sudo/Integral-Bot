@@ -34,9 +34,9 @@ type Category =
 
 
 const CATEGORY_LABELS: Record<Category, string> = {
-  levels: "Levels",
-  messages: "Messages",
-  voice: "Voice",
+  levels: "Levels (All Time)",
+  messages: "All Time Messages",
+  voice: "All Time Voice",
   "weekly-messages": "Weekly Messages",
   "weekly-voice": "Weekly Voice",
 };
@@ -93,7 +93,7 @@ function formatRow(stats: UserStats, rank: number, category: Category): string {
 
   switch (category) {
     case "levels":
-      return `${rank}. ${mention} — ${stats.xp.toLocaleString()} XP`;
+  return `${rank}. ${mention} — Level ${levelFromXp(stats.xp)} • ${stats.xp.toLocaleString()} XP`;
 
     case "messages":
       return `${rank}. ${mention} — ${(stats.messages ?? 0).toLocaleString()} messages`;
