@@ -106,15 +106,34 @@ export async function endVoiceSession(
   const doc = await UserStatsModel.findOne({ guildId, userId }).select("voiceJoinedAt");
   if (!doc?.voiceJoinedAt) return 0;
 
-  const minutes = Math.floor((now.getTime() - doc.voiceJoinedAt.getTime()) / 60_000);
+  const durationMs = now.getTime() - doc.voiceJoinedAt.getTime();
 
-  await UserStatsModel.updateOne(
-    { guildId, userId },
-    minutes > 0
-      ? { $inc: { voiceMinutes: minutes, weeklyVoiceMinutes: minutes }, $unset: { voiceJoinedAt: 1 } }
-      : { $unset: { voiceJoinedAt: 1 } },
-  );
+const minutes = Math.floor(durationMs / 60_000);
 
+// 15 sec = 1 message worth XP
+const chunks = Math.floor(durationMs / 15_000);
+
+let xpGain = 0;
+
+for (let i = 0; i < chunks; i++) {
+  xpGain += Math.floor(Math.random() * (10 - 5 + 1)) + 5;
+}
+
+await UserStatsModel.updateOne(
+  { guildId, userId },
+  minutes > 0 || xpGain > 0
+    ? {
+        $inc: {
+          voiceMinutes: minutes,
+          weeklyVoiceMinutes: minutes,
+          xp: xpGain,
+        },
+        $unset: { voiceJoinedAt: 1 },
+      }
+    : {
+        $unset: { voiceJoinedAt: 1 },
+      },
+);
   return minutes;
 }
 
