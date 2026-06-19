@@ -7,7 +7,7 @@ export const config = {
   xp: {
     minPerMessage: 5,
     maxPerMessage: 10,
-    cooldownSeconds: 30,
+    cooldownSeconds: 5,
   },
 } as const;
 
