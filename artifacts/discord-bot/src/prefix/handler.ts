@@ -13,7 +13,7 @@ import type { Message } from "discord.js";
 export default async function prefixHandler(message: Message): Promise<boolean> {
   if (message.author.bot || !message.inGuild()) return false;
 
-  if (!message.content.startsWith("!")) return false;
+  if (!message.content.startsWith("&")) return false;
 
   const args = message.content.slice(1).trim().split(/\s+/);
   const command = args.shift()?.toLowerCase();
