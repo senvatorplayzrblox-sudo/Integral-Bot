@@ -1,4 +1,3 @@
-import { getGuildConfig } from "../utils/getGuildConfig.js";
 import prefixHandler from "../prefix/handler.js";
 import type { Message } from "discord.js";
 import { logger } from "../lib/logger.js";
