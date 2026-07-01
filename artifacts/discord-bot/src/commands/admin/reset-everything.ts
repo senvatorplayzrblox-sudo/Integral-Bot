@@ -40,7 +40,7 @@ export async function resetEverything(
 
   if (!target) {
     await message.reply(
-      "❌ Use: `!reset-everything @user` or `!reset-everything @everyone`"
+      "❌ Use: `&reset-everything @user` or `&reset-everything @everyone`"
     );
     return;
   }

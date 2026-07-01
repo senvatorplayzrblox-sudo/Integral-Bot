@@ -28,6 +28,7 @@ interface WelcomeSetupSession {
   footer: string;
   bannerUrl: string | null;
   color: number;
+  bannerCollector: { stop(): void } | null;
 }
 
 const sessions = new Map<string, WelcomeSetupSession>();
@@ -54,6 +55,7 @@ export function initSession(
     footer: config.welcomeFooter ?? "",
     bannerUrl: config.welcomeBanner ?? null,
     color: config.welcomeColor ?? 0x5865f2,
+    bannerCollector: null,
   });
 }
 
@@ -66,6 +68,7 @@ function saveSession(session: WelcomeSetupSession): void {
 }
 
 function clearSession(guildId: string, userId: string): void {
+  sessions.get(sessionKey(guildId, userId))?.bannerCollector?.stop();
   sessions.delete(sessionKey(guildId, userId));
 }
 
@@ -241,6 +244,96 @@ function buildBannerStepPayload(): Payload {
   );
 
   return { content: "", embeds: [embed], components: [row] };
+}
+
+function buildBannerUploadCardPayload(): Payload {
+  const embed = new EmbedBuilder()
+    .setTitle("📷 Upload Welcome Banner")
+    .setColor(0x5865f2)
+    .setDescription(
+      "Use the **+** attachment button (or drag and drop) to upload your banner image.\n\n" +
+      "**Accepted formats:**\n" +
+      "› PNG  › JPG  › JPEG  › WEBP  › GIF\n\n" +
+      "*The bot will automatically detect and save your image.*",
+    );
+
+  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId("ws_banner_card_back")
+      .setLabel("Back")
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId("ws_banner_card_skip")
+      .setLabel("Skip")
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId("ws_banner_card_cancel")
+      .setLabel("Cancel")
+      .setStyle(ButtonStyle.Danger),
+  );
+
+  return { content: "", embeds: [embed], components: [row] };
+}
+
+function buildBannerSuccessPayload(bannerUrl: string): Payload {
+  const embed = new EmbedBuilder()
+    .setTitle("✅ Banner Uploaded Successfully")
+    .setColor(0x57f287)
+    .setDescription("Your banner has been saved to the current setup session.")
+    .setImage(bannerUrl);
+
+  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId("ws_banner_continue")
+      .setLabel("Continue")
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId("ws_banner_replace")
+      .setLabel("Replace Banner")
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId("ws_banner_remove")
+      .setLabel("Remove Banner")
+      .setStyle(ButtonStyle.Danger),
+  );
+
+  return { content: "", embeds: [embed], components: [row] };
+}
+
+function startBannerCollector(
+  channel: GuildTextBasedChannel,
+  session: WelcomeSetupSession,
+): void {
+  const { guildId, userId } = session;
+
+  const collector = channel.createMessageCollector({
+    filter: (m: Message) =>
+      m.author.id === userId &&
+      m.attachments.size > 0 &&
+      isImageAttachment(m.attachments.first()!),
+    max: 1,
+  });
+
+  session.bannerCollector = collector;
+  saveSession(session);
+
+  collector.on("collect", async (msg: Message) => {
+    const attachment = msg.attachments.first()!;
+    const fresh = getSession(guildId, userId);
+    if (!fresh) return;
+
+    fresh.bannerUrl = attachment.url;
+    fresh.bannerCollector = null;
+    saveSession(fresh);
+
+    try {
+      const setupMsg = await channel.messages.fetch(fresh.setupMessageId);
+      await setupMsg.edit(buildBannerSuccessPayload(attachment.url));
+      await msg.react("✅").catch(() => {});
+    } catch (err) {
+      logger.error({ err }, "Failed to update setup message after banner upload");
+    }
+  });
 }
 
 function buildColorStepPayload(): Payload {
@@ -467,7 +560,7 @@ export async function handleWelcomeInteraction(interaction: Interaction): Promis
       return;
     }
 
-    // Step 2 — Upload Banner: update message then start collector
+    // Step 2 — Upload Banner: show polished upload card, start attachment collector
     if (customId === "ws_banner_upload") {
       const session = getSession(guildId, userId);
       if (!session) {
@@ -478,55 +571,34 @@ export async function handleWelcomeInteraction(interaction: Interaction): Promis
         return;
       }
 
-      await interaction.update({
-        content: "📎 **Upload your banner image below.** There is no timeout — take your time.\nSupported: PNG, JPG, JPEG, WEBP, GIF",
-        embeds: [],
-        components: [],
-      });
+      session.bannerCollector?.stop();
+      await interaction.update(buildBannerUploadCardPayload());
 
-      const channel = interaction.channel;
+      const channel = interaction.channel as GuildTextBasedChannel | null;
       if (!channel?.isTextBased()) return;
 
-      const collector = channel.createMessageCollector({
-        filter: (m: Message) =>
-          m.author.id === userId &&
-          m.attachments.size > 0 &&
-          isImageAttachment(m.attachments.first()!),
-        max: 1,
-      });
-
-      collector.on("collect", async (msg: Message) => {
-        const attachment = msg.attachments.first()!;
-        session.bannerUrl = attachment.url;
-        saveSession(session);
-
-        const nextRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-          new ButtonBuilder()
-            .setCustomId("ws_banner_next")
-            .setLabel("Next ▶")
-            .setStyle(ButtonStyle.Primary),
-        );
-
-        try {
-          const setupMsg = await channel.messages.fetch(session.setupMessageId);
-          await setupMsg.edit({
-            content: "✅ Banner uploaded successfully!",
-            embeds: [],
-            components: [nextRow],
-          });
-          await msg.react("✅").catch(() => {});
-        } catch (err) {
-          logger.error({ err }, "Failed to update setup message after banner upload");
-        }
-      });
-
+      startBannerCollector(channel, session);
       return;
     }
 
-    // Step 2 — Skip Banner
-    if (customId === "ws_banner_skip") {
+    // Step 2 — Upload card: Back → return to Upload/Skip choice
+    if (customId === "ws_banner_card_back") {
       const session = getSession(guildId, userId);
       if (session) {
+        session.bannerCollector?.stop();
+        session.bannerCollector = null;
+        saveSession(session);
+      }
+      await interaction.update(buildBannerStepPayload());
+      return;
+    }
+
+    // Step 2 — Upload card: Skip → clear banner, advance to color
+    if (customId === "ws_banner_card_skip") {
+      const session = getSession(guildId, userId);
+      if (session) {
+        session.bannerCollector?.stop();
+        session.bannerCollector = null;
         session.bannerUrl = null;
         saveSession(session);
       }
@@ -534,8 +606,58 @@ export async function handleWelcomeInteraction(interaction: Interaction): Promis
       return;
     }
 
-    // Step 2 → Step 3 (after banner upload)
-    if (customId === "ws_banner_next") {
+    // Step 2 — Upload card: Cancel
+    if (customId === "ws_banner_card_cancel") {
+      clearSession(guildId, userId);
+      await interaction.update({ content: "Setup cancelled.", embeds: [], components: [] });
+      return;
+    }
+
+    // Step 2 — After upload: Continue to color step
+    if (customId === "ws_banner_continue") {
+      await interaction.update(buildColorStepPayload());
+      return;
+    }
+
+    // Step 2 — After upload: Replace Banner → show upload card again with new collector
+    if (customId === "ws_banner_replace") {
+      const session = getSession(guildId, userId);
+      if (!session) {
+        await interaction.reply({
+          content: "❌ Session expired. Run `&welcomesetup` again.",
+          ephemeral: true,
+        });
+        return;
+      }
+
+      session.bannerCollector?.stop();
+      await interaction.update(buildBannerUploadCardPayload());
+
+      const channel = interaction.channel as GuildTextBasedChannel | null;
+      if (!channel?.isTextBased()) return;
+
+      startBannerCollector(channel, session);
+      return;
+    }
+
+    // Step 2 — After upload: Remove Banner → clear and return to banner choice
+    if (customId === "ws_banner_remove") {
+      const session = getSession(guildId, userId);
+      if (session) {
+        session.bannerUrl = null;
+        saveSession(session);
+      }
+      await interaction.update(buildBannerStepPayload());
+      return;
+    }
+
+    // Step 2 — Skip Banner (from the initial banner choice)
+    if (customId === "ws_banner_skip") {
+      const session = getSession(guildId, userId);
+      if (session) {
+        session.bannerUrl = null;
+        saveSession(session);
+      }
       await interaction.update(buildColorStepPayload());
       return;
     }

@@ -1,6 +1,8 @@
 import type { Message } from "discord.js";
 import { getOrCreate, save } from "../../db/models/GuildMember.js";
+import { getGuildConfig } from "../../db/models/GuildConfig.js";
 import { xpForNextLevel } from "../../config.js";
+import { applyLevelRoles } from "../../lib/levelRoles.js";
 
 export async function setlevel(
   message: Message,
@@ -16,19 +18,15 @@ export async function setlevel(
   const level = Number(args[1]);
 
   if (!target || isNaN(level) || level < 0) {
-    await message.reply(
-      "❌ Use: `!setlevel @user level`"
-    );
+    await message.reply("❌ Use: `&setlevel @user level`");
     return;
   }
 
-  const stats = await getOrCreate(
-    message.guildId!,
-    target.id,
-  );
+  const stats = await getOrCreate(message.guildId!, target.id);
+
+  const oldLevel = stats.level;
 
   let xp = 0;
-
   for (let i = 0; i < level; i++) {
     xp += xpForNextLevel(i);
   }
@@ -38,7 +36,13 @@ export async function setlevel(
 
   await save(stats);
 
-  await message.reply(
-    `✅ Set ${target}'s level to **${level}**.`
-  );
+  if (level > oldLevel && message.guild) {
+    const guildConfig = await getGuildConfig(message.guildId!);
+    const member = await message.guild.members.fetch(target.id).catch(() => null);
+    if (member) {
+      await applyLevelRoles(message.guild, member, oldLevel, level, guildConfig);
+    }
+  }
+
+  await message.reply(`✅ Set ${target}'s level to **${level}**.`);
 }

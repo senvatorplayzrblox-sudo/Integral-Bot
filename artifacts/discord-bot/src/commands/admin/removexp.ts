@@ -17,7 +17,7 @@ export async function removexp(
 
   if (!target || !amount || amount <= 0) {
     await message.reply(
-      "❌ Use: `!removexp @user amount`"
+      "❌ Use: `&removexp @user amount`"
     );
     return;
   }

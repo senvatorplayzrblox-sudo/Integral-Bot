@@ -16,7 +16,7 @@ export async function setlevelrole(
 
   if (!level || !role) {
     await message.reply(
-      "❌ Use: `!setlevelrole 10 @Role`"
+      "❌ Use: `&setlevelrole 10 @Role`"
     );
     return;
   }

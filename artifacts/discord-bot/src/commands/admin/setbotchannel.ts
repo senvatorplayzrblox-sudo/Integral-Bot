@@ -15,7 +15,7 @@ export async function setbotchannel(
 
   if (channels.length === 0) {
     await message.reply(
-      "❌ Mention channels.\nExample: `!setbotchannel #bot #commands #chat`",
+      "❌ Mention channels.\nExample: `&setbotchannel #bot #commands #chat`",
     );
     return;
   }

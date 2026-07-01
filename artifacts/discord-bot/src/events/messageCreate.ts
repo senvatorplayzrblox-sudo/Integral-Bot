@@ -4,6 +4,7 @@ import { logger } from "../lib/logger.js";
 import { getOrCreate, save } from "../db/models/GuildMember.js";
 import { config, levelFromXp } from "../config.js";
 import { getGuildConfig } from "../utils/getGuildConfig.js";
+import { applyLevelRoles } from "../lib/levelRoles.js";
   export default async function onMessageCreate(message: Message): Promise<void> {
 
   if (await prefixHandler(message)) return;
@@ -33,21 +34,9 @@ stats.level = levelFromXp(stats.xp);
 stats.lastMessageXP = now;
 
 if (stats.level > oldLevel) {
-
   const guildConfig = await getGuildConfig(message.guildId!);
-
-  const roleId = guildConfig.levelRoles?.[String(stats.level)];
-
-  if (roleId) {
-    const member = await message.guild.members.fetch(message.author.id);
-
-    const role = message.guild.roles.cache.get(roleId);
-
-    if (role) {
-      await member.roles.add(role).catch(() => {});
-    }
-  }
-
+  const member = await message.guild.members.fetch(message.author.id);
+  await applyLevelRoles(message.guild, member, oldLevel, stats.level, guildConfig);
   await sendLevelUp(message, stats.level);
 }
 
