@@ -34,7 +34,7 @@ stats.lastMessageXP = now;
 
 if (stats.level > oldLevel) {
 
-  const guildConfig = await getGuildConfig(message.guildId);
+  const guildConfig = await getGuildConfig(message.guildId!);
 
   const roleId = guildConfig.levelRoles?.[String(stats.level)];
 
@@ -64,7 +64,7 @@ async function sendLevelUp(message: Message, newLevel: number): Promise<void> {
 
   <:acheiver:1516671562365931530> Stay Active To Unlock More Milestones And Reach Level ${newLevel + 1}!`;
   try {
-  const guildConfig = await getGuildConfig(message.guildId);
+  const guildConfig = await getGuildConfig(message.guildId!);
     const channelId = guildConfig.levelChannelId;
 if (channelId) {
   const ch = message.guild?.channels.cache.get(channelId);

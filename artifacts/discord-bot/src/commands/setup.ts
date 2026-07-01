@@ -53,7 +53,7 @@ export const setup: Command = {
 
     if (sub === "bot-channel") {
       await updateGuildConfig(guildId, {
-        botChannelId: channel.id,
+        botChannelIds: [channel.id],
       });
 
       await interaction.reply({

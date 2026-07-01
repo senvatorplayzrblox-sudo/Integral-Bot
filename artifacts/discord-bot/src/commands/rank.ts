@@ -1,4 +1,3 @@
-import { getGuildConfig } from "../db/models/GuildConfig.js";
 import { SlashCommandBuilder, type ChatInputCommandInteraction } from "discord.js";
 import type { Command } from "../types.js";
 import {
@@ -30,18 +29,6 @@ export const rank: Command = {
     ),
 
   async execute(interaction: ChatInputCommandInteraction): Promise<void> {
-    const guildConfig = await getGuildConfig(interaction.guildId!);
-
-if (
-  guildConfig.botChannelId &&
-  interaction.channelId !== guildConfig.botChannelId
-) {
-  await interaction.reply({
-    content: `❌ Use bot commands in <#${guildConfig.botChannelId}>`,
-    ephemeral: true,
-  });
-  return;
-}
     await interaction.deferReply();
 
     const target = interaction.options.getUser("user") ?? interaction.user;

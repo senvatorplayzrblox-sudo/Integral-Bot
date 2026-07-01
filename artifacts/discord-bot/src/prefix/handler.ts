@@ -8,6 +8,8 @@ import { removexp } from "../commands/admin/removexp.js";
 import { givexp } from "../commands/admin/givexp.js";
 import { setbotchannel } from "../commands/admin/setbotchannel.js";
 import { setlevelchannel } from "../commands/admin/setlevelchannel.js";
+import { setwelcomechannel } from "../commands/admin/setwelcomechannel.js";
+import { welcomesetup } from "../commands/admin/welcomesetup.js";
 import type { Message } from "discord.js";
 
 export default async function prefixHandler(message: Message): Promise<boolean> {
@@ -63,7 +65,12 @@ if (
       case "listlevelroles":
   await listlevelroles(message);
   break;
-      
+      case "setwelcomechannel":
+  await setwelcomechannel(message, args);
+  break;
+      case "welcomesetup":
+  await welcomesetup(message);
+  break;
 
   default:
     break;

@@ -2,11 +2,25 @@ import { EmbedBuilder, type Interaction } from "discord.js";
 import { logger } from "../lib/logger.js";
 import type { IntegralClient } from "../client.js";
 import { getGuildConfig } from "../db/models/GuildConfig.js";
+import { handleWelcomeInteraction } from "../lib/welcome.js";
 
 export default async function onInteractionCreate(
   client: IntegralClient,
   interaction: Interaction,
 ): Promise<void> {
+
+  // Route welcome-system buttons and modals before anything else
+  if (
+    (interaction.isButton() || interaction.isModalSubmit()) &&
+    interaction.customId.startsWith("ws_")
+  ) {
+    try {
+      await handleWelcomeInteraction(interaction);
+    } catch (err) {
+      logger.error({ err, customId: interaction.customId }, "Welcome interaction error");
+    }
+    return;
+  }
 
   if (!interaction.isChatInputCommand()) return;
 
