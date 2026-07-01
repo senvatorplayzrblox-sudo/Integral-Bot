@@ -1,30 +1,34 @@
 import type { Message } from "discord.js";
 import { UserStatsModel } from "../../db/models/GuildMember.js";
-import { errorReply } from "../../lib/reply.js";
+import { errorReply, successReply } from "../../lib/reply.js";
 
 const OWNER_ID = "1418875905085935637";
 
-export async function resetEverything(message: Message, args: string[]): Promise<void> {
+const RESET_FIELDS = {
+  xp:                 0,
+  level:              0,
+  messages:           0,
+  weeklyMessages:     0,
+  voiceMinutes:       0,
+  weeklyVoiceMinutes: 0,
+} as const;
+
+export async function resetEverything(message: Message): Promise<void> {
   if (message.author.id !== OWNER_ID) {
-    await errorReply(message, "You cannot use this command.");
+    await errorReply(message, "Access Denied", "You do not have permission to use this command.");
     return;
   }
 
   if (message.content.includes("@everyone")) {
     await UserStatsModel.updateMany(
       { guildId: message.guildId },
-      {
-        $set: {
-          xp: 0,
-          level: 0,
-          messages: 0,
-          weeklyMessages: 0,
-          voiceMinutes: 0,
-          weeklyVoiceMinutes: 0,
-        },
-      },
+      { $set: RESET_FIELDS },
     );
-    await message.reply("✅ Reset completed for everyone in this server.");
+    await successReply(
+      message,
+      "Reset Complete",
+      "All stats have been reset for every member in this server.",
+    );
     return;
   }
 
@@ -33,6 +37,7 @@ export async function resetEverything(message: Message, args: string[]): Promise
   if (!target) {
     await errorReply(
       message,
+      "Invalid Arguments",
       "Please mention a user or @everyone.\nUsage: `&reset-everything @user` or `&reset-everything @everyone`",
     );
     return;
@@ -40,17 +45,12 @@ export async function resetEverything(message: Message, args: string[]): Promise
 
   await UserStatsModel.updateOne(
     { guildId: message.guildId, userId: target.id },
-    {
-      $set: {
-        xp: 0,
-        level: 0,
-        messages: 0,
-        weeklyMessages: 0,
-        voiceMinutes: 0,
-        weeklyVoiceMinutes: 0,
-      },
-    },
+    { $set: RESET_FIELDS },
   );
 
-  await message.reply(`✅ Reset completed for ${target}.`);
+  await successReply(
+    message,
+    "Reset Complete",
+    `All stats have been reset for ${target}.`,
+  );
 }

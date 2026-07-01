@@ -1,27 +1,27 @@
 import type { Message } from "discord.js";
 import { getGuildConfig } from "../../db/models/GuildConfig.js";
 import { sendWelcomeMessage } from "../../lib/welcome.js";
+import { errorReply } from "../../lib/reply.js";
 
 export async function welcometest(message: Message): Promise<void> {
   if (!message.member?.permissions.has("Administrator")) {
-    await message.reply("❌ You need Administrator permission.");
+    await errorReply(message, "Missing Permissions", "You need **Administrator** permission to use this command.");
     return;
   }
 
   if (!message.inGuild()) return;
 
-  const guildId = message.guildId;
-  const config = await getGuildConfig(guildId);
+  const config = await getGuildConfig(message.guildId);
 
   if (!config.welcomeTitle && !config.welcomeDescription) {
-    await message.reply(
-      "❌ No welcome message configured yet. Run `&welcomesetup` to set one up.",
+    await errorReply(
+      message,
+      "Not Configured",
+      "No welcome message has been set up yet.\nRun `&welcomesetup` to configure one.",
     );
     return;
   }
 
-  // Use the mentioned member, or fall back to the command executor.
   const targetMember = message.mentions.members?.first() ?? message.member;
-
   await sendWelcomeMessage(config, targetMember, message.channel);
 }

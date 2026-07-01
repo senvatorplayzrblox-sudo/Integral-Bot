@@ -13,6 +13,7 @@ import {
   type Message,
 } from "discord.js";
 import { getGuildConfig, updateGuildConfig, type GuildConfig } from "../db/models/GuildConfig.js";
+import { makeEmbed } from "./reply.js";
 import { logger } from "./logger.js";
 
 // ── Session State ──────────────────────────────────────────────────────────
@@ -482,13 +483,13 @@ export async function handleWelcomeInteraction(interaction: Interaction): Promis
       const member = await interaction.guild?.members.fetch(userId).catch(() => null);
 
       if (!member) {
-        await interaction.reply({ content: "❌ Could not fetch your member data.", ephemeral: true });
+        await interaction.reply({ embeds: [makeEmbed("error", "Error", "Could not fetch your member data.")], ephemeral: true });
         return;
       }
 
       if (!config.welcomeTitle && !config.welcomeDescription) {
         await interaction.reply({
-          content: "❌ No welcome message configured yet. Use **Customize** first.",
+          embeds: [makeEmbed("warning", "Not Configured", "No welcome message set up yet. Use **Customize** first.")],
           ephemeral: true,
         });
         return;
@@ -533,7 +534,7 @@ export async function handleWelcomeInteraction(interaction: Interaction): Promis
       clearSession(guildId, userId);
       const config = await getGuildConfig(guildId);
       const payload = buildSetupPanelPayload(config);
-      await interaction.update({ ...payload, content: "✅ Welcome configuration has been reset." });
+      await interaction.update({ ...payload, content: "" });
       return;
     }
 
@@ -556,7 +557,7 @@ export async function handleWelcomeInteraction(interaction: Interaction): Promis
     // Main panel — Cancel
     if (customId === "ws_cancel") {
       clearSession(guildId, userId);
-      await interaction.update({ content: "Setup cancelled.", embeds: [], components: [] });
+      await interaction.update({ content: "", embeds: [makeEmbed("warning", "Setup Cancelled", "Your welcome configuration session has been cancelled.")], components: [] });
       return;
     }
 
@@ -565,7 +566,7 @@ export async function handleWelcomeInteraction(interaction: Interaction): Promis
       const session = getSession(guildId, userId);
       if (!session) {
         await interaction.reply({
-          content: "❌ Session expired. Run `&welcomesetup` again.",
+          embeds: [makeEmbed("error", "Session Expired", "Run `&welcomesetup` to start a new session.")],
           ephemeral: true,
         });
         return;
@@ -609,7 +610,7 @@ export async function handleWelcomeInteraction(interaction: Interaction): Promis
     // Step 2 — Upload card: Cancel
     if (customId === "ws_banner_card_cancel") {
       clearSession(guildId, userId);
-      await interaction.update({ content: "Setup cancelled.", embeds: [], components: [] });
+      await interaction.update({ content: "", embeds: [makeEmbed("warning", "Setup Cancelled", "Your welcome configuration session has been cancelled.")], components: [] });
       return;
     }
 
@@ -624,7 +625,7 @@ export async function handleWelcomeInteraction(interaction: Interaction): Promis
       const session = getSession(guildId, userId);
       if (!session) {
         await interaction.reply({
-          content: "❌ Session expired. Run `&welcomesetup` again.",
+          embeds: [makeEmbed("error", "Session Expired", "Run `&welcomesetup` to start a new session.")],
           ephemeral: true,
         });
         return;
@@ -704,7 +705,7 @@ export async function handleWelcomeInteraction(interaction: Interaction): Promis
       const session = getSession(guildId, userId);
       if (!session) {
         await interaction.reply({
-          content: "❌ Session expired. Run `&welcomesetup` again.",
+          embeds: [makeEmbed("error", "Session Expired", "Run `&welcomesetup` to start a new session.")],
           ephemeral: true,
         });
         return;
@@ -712,7 +713,7 @@ export async function handleWelcomeInteraction(interaction: Interaction): Promis
 
       const member = await interaction.guild?.members.fetch(userId).catch(() => null);
       if (!member) {
-        await interaction.reply({ content: "❌ Could not fetch your member data.", ephemeral: true });
+        await interaction.reply({ embeds: [makeEmbed("error", "Error", "Could not fetch your member data.")], ephemeral: true });
         return;
       }
 
@@ -742,7 +743,7 @@ export async function handleWelcomeInteraction(interaction: Interaction): Promis
       const session = getSession(guildId, userId);
       if (!session) {
         await interaction.reply({
-          content: "❌ Session expired. Run `&welcomesetup` again.",
+          embeds: [makeEmbed("error", "Session Expired", "Run `&welcomesetup` to start a new session.")],
           ephemeral: true,
         });
         return;
@@ -835,7 +836,7 @@ export async function handleWelcomeInteraction(interaction: Interaction): Promis
     // Step 4 — Cancel
     if (customId === "ws_preview_cancel") {
       clearSession(guildId, userId);
-      await interaction.update({ content: "Setup cancelled.", embeds: [], components: [] });
+      await interaction.update({ content: "", embeds: [makeEmbed("warning", "Setup Cancelled", "Your welcome configuration session has been cancelled.")], components: [] });
       return;
     }
   }
@@ -854,7 +855,7 @@ export async function handleWelcomeInteraction(interaction: Interaction): Promis
       const session = getSession(guildId, userId);
       if (!session) {
         await interaction.reply({
-          content: "❌ Session expired. Run `&welcomesetup` again.",
+          embeds: [makeEmbed("error", "Session Expired", "Run `&welcomesetup` to start a new session.")],
           ephemeral: true,
         });
         return;
@@ -890,7 +891,7 @@ export async function handleWelcomeInteraction(interaction: Interaction): Promis
 
       if (!/^[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/.test(raw) || isNaN(parsed)) {
         await interaction.reply({
-          content: "❌ Invalid HEX code. Example: `#5865F2` or `#FFF`",
+          embeds: [makeEmbed("error", "Invalid HEX Code", "Example: `#5865F2` or `#FFF`")],
           ephemeral: true,
         });
         return;
@@ -899,7 +900,7 @@ export async function handleWelcomeInteraction(interaction: Interaction): Promis
       const session = getSession(guildId, userId);
       if (!session) {
         await interaction.reply({
-          content: "❌ Session expired. Run `&welcomesetup` again.",
+          embeds: [makeEmbed("error", "Session Expired", "Run `&welcomesetup` to start a new session.")],
           ephemeral: true,
         });
         return;

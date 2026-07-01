@@ -19,10 +19,12 @@ function buildLevelUpText(userId: string, level: number): string {
 /**
  * Sends level-up notification(s) to the configured level channel.
  *
- * - Normal jump (< 5 levels): sends the standard level-up message for the
+ * - Normal jump (< 5 levels): sends one standard level-up message for the
  *   final level reached.
- * - Large jump (≥ 5 levels): sends one summary message first, then the
- *   standard message for every intermediate level so each reward is visible.
+ * - Large jump (≥ 5 levels): sends ONE summary message only.
+ *   "🚀 jumped from Level X → Level Y!"
+ *   Individual per-level messages are NOT sent to prevent spam.
+ *   All intermediate role rewards are still granted separately via applyLevelRoles.
  *
  * Falls back to `fallbackChannelId` when no level channel is configured
  * (e.g. for message-based XP where the source channel is known).
@@ -47,16 +49,13 @@ export async function sendLevelUpNotification(
   const channel = raw as GuildTextBasedChannel;
 
   if (jump >= 5) {
+    // Large jump: ONE summary message only — no per-level spam.
+    // Roles are granted by applyLevelRoles, not here.
     await channel
       .send(`🚀 <@${userId}> jumped from **Level ${oldLevel}** → **Level ${newLevel}**!`)
       .catch((err: unknown) => logger.error({ err }, "Failed to send jump summary"));
-
-    for (let level = oldLevel + 1; level <= newLevel; level++) {
-      await channel
-        .send(buildLevelUpText(userId, level))
-        .catch((err: unknown) => logger.error({ err, level }, "Failed to send intermediate level-up"));
-    }
   } else {
+    // Normal jump: one message for the final level reached.
     await channel
       .send(buildLevelUpText(userId, newLevel))
       .catch((err: unknown) => logger.error({ err }, "Failed to send level-up message"));

@@ -6,6 +6,7 @@ import {
 } from "discord.js";
 import type { Command } from "../types.js";
 import { updateGuildConfig } from "../db/models/GuildConfig.js";
+import { makeEmbed } from "../lib/reply.js";
 
 export const setup: Command = {
   data: new SlashCommandBuilder()
@@ -39,36 +40,29 @@ export const setup: Command = {
 
   async execute(interaction: ChatInputCommandInteraction): Promise<void> {
     const guildId = interaction.guildId!;
-
-    const sub = interaction.options.getSubcommand();
+    const sub     = interaction.options.getSubcommand();
     const channel = interaction.options.getChannel("channel");
 
     if (!channel) {
       await interaction.reply({
-        content: "❌ Channel missing.",
+        embeds: [makeEmbed("error", "Missing Channel", "Please specify a channel.")],
         ephemeral: true,
       });
       return;
     }
 
     if (sub === "bot-channel") {
-      await updateGuildConfig(guildId, {
-        botChannelIds: [channel.id],
-      });
-
+      await updateGuildConfig(guildId, { botChannelIds: [channel.id] });
       await interaction.reply({
-        content: `✅ Bot command channel set to ${channel}`,
+        embeds: [makeEmbed("success", "Bot Channel Set", `Bot command channel set to <#${channel.id}>.`)],
         ephemeral: true,
       });
     }
 
     if (sub === "level-channel") {
-      await updateGuildConfig(guildId, {
-        levelChannelId: channel.id,
-      });
-
+      await updateGuildConfig(guildId, { levelChannelId: channel.id });
       await interaction.reply({
-        content: `✅ Level up channel set to ${channel}`,
+        embeds: [makeEmbed("success", "Level Channel Set", `Level-up messages will be sent in <#${channel.id}>.`)],
         ephemeral: true,
       });
     }
