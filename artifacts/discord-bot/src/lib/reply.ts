@@ -9,6 +9,10 @@ const COLORS = {
   warning: 0xfee75c, // yellow
 } as const;
 
+// ── Auto-delete delay for temporary prefix replies ─────────────────────────
+
+const AUTO_DELETE_MS = 12_000;
+
 // ── Core builder ──────────────────────────────────────────────────────────
 
 function buildEmbed(
@@ -21,53 +25,61 @@ function buildEmbed(
   return embed;
 }
 
-// ── Public helpers ────────────────────────────────────────────────────────
+async function sendTemporary(message: Message, embed: EmbedBuilder): Promise<void> {
+  const sent = await message.reply({ embeds: [embed] });
+  setTimeout(() => sent.delete().catch(() => {}), AUTO_DELETE_MS);
+}
 
-/** ✅ Green embed — action completed successfully. */
+// ── Public prefix helpers ─────────────────────────────────────────────────
+
+/**
+ * ✅ Green — action completed. Auto-deletes after 12 s.
+ */
 export async function successReply(
   message: Message,
   title: string,
   description?: string,
 ): Promise<void> {
-  await message.reply({
-    embeds: [buildEmbed(COLORS.success, `✅  ${title}`, description)],
-  });
+  await sendTemporary(message, buildEmbed(COLORS.success, `✅  ${title}`, description));
 }
 
-/** ❌ Red embed — something went wrong or input is invalid. */
+/**
+ * ❌ Red — error or invalid input. Auto-deletes after 12 s.
+ */
 export async function errorReply(
   message: Message,
   title: string,
   description?: string,
 ): Promise<void> {
-  await message.reply({
-    embeds: [buildEmbed(COLORS.error, `❌  ${title}`, description)],
-  });
+  await sendTemporary(message, buildEmbed(COLORS.error, `❌  ${title}`, description));
 }
 
-/** ℹ️ Blurple embed — neutral information display. */
+/**
+ * ℹ️ Blurple — important, persistent output (help, lists). Does NOT auto-delete.
+ */
 export async function infoReply(
   message: Message,
   title: string,
   description?: string,
 ): Promise<void> {
-  await message.reply({
-    embeds: [buildEmbed(COLORS.info, `ℹ️  ${title}`, description)],
-  });
+  await message.reply({ embeds: [buildEmbed(COLORS.info, `ℹ️  ${title}`, description)] });
 }
 
-/** ⚠️ Yellow embed — non-fatal warnings or confirmations. */
+/**
+ * ⚠️ Yellow — non-fatal warning. Auto-deletes after 12 s.
+ */
 export async function warningReply(
   message: Message,
   title: string,
   description?: string,
 ): Promise<void> {
-  await message.reply({
-    embeds: [buildEmbed(COLORS.warning, `⚠️  ${title}`, description)],
-  });
+  await sendTemporary(message, buildEmbed(COLORS.warning, `⚠️  ${title}`, description));
 }
 
-/** Build a raw embed without sending — for use in interaction responses. */
+/**
+ * Build a raw EmbedBuilder without sending — for use in interaction responses
+ * (interaction.reply, interaction.editReply, interaction.followUp, etc.)
+ */
 export function makeEmbed(
   type: "success" | "error" | "info" | "warning",
   title: string,

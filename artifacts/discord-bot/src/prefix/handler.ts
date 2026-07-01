@@ -11,7 +11,7 @@ import { setlevelchannel }   from "../commands/admin/setlevelchannel.js";
 import { setwelcomechannel } from "../commands/admin/setwelcomechannel.js";
 import { welcomesetup }      from "../commands/admin/welcomesetup.js";
 import { welcometest }       from "../commands/admin/welcometest.js";
-import { errorReply, infoReply } from "../lib/reply.js";
+import { errorReply, successReply } from "../lib/reply.js";
 import type { Message } from "discord.js";
 
 export default async function prefixHandler(message: Message): Promise<boolean> {
@@ -35,7 +35,7 @@ export default async function prefixHandler(message: Message): Promise<boolean> 
 
   switch (command) {
     case "test":
-      await infoReply(message, "System Check", "Prefix system is working correctly.");
+      await successReply(message, "System Check", "Prefix system is working correctly.");
       break;
 
     case "givexp":

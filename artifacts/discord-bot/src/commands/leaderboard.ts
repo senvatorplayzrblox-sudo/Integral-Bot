@@ -19,6 +19,7 @@ import {
 } from "../db/models/GuildMember.js";
 
 import { levelFromXp } from "../config.js";
+import { makeEmbed } from "../lib/reply.js";
 
 
 const PAGE_SIZE = 10;
@@ -213,12 +214,11 @@ if(!category){
 
   await interaction.editReply({
     embeds: [
-      {
-        title: "❌ Missing Category",
-        description:
-          "Please provide a leaderboard category.\n\n**Available Categories**\n• Levels\n• Messages\n• Voice\n• Weekly Messages\n• Weekly Voice",
-        color: 0xff4444,
-      },
+      makeEmbed(
+        "error",
+        "Missing Category",
+        "Please provide a leaderboard category.\n\n**Available Categories**\n• Levels\n• Messages\n• Voice\n• Weekly Messages\n• Weekly Voice",
+      ),
     ],
   });
 
