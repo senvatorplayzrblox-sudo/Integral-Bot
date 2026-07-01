@@ -1,4 +1,5 @@
 import mongoose, { type Document, type Model, Schema } from "mongoose";
+import { levelFromXp } from "../../config.js";
 
 export interface UserStats {
   guildId: string;
@@ -98,43 +99,49 @@ export async function startVoiceSession(
   );
 }
 
+export interface VoiceSessionResult {
+  minutes: number;
+  xpGained: number;
+  oldLevel: number;
+  newLevel: number;
+}
+
 export async function endVoiceSession(
   guildId: string,
   userId: string,
   now: Date,
-): Promise<number> {
-  const doc = await UserStatsModel.findOne({ guildId, userId }).select("voiceJoinedAt");
-  if (!doc?.voiceJoinedAt) return 0;
+): Promise<VoiceSessionResult> {
+  const doc = await UserStatsModel.findOne({ guildId, userId }).select("voiceJoinedAt xp");
+  if (!doc?.voiceJoinedAt) return { minutes: 0, xpGained: 0, oldLevel: 0, newLevel: 0 };
 
   const durationMs = now.getTime() - doc.voiceJoinedAt.getTime();
+  const minutes = Math.floor(durationMs / 60_000);
+  const chunks = Math.floor(durationMs / 15_000);
 
-const minutes = Math.floor(durationMs / 60_000);
+  let xpGain = 0;
+  for (let i = 0; i < chunks; i++) {
+    xpGain += Math.floor(Math.random() * (10 - 5 + 1)) + 5;
+  }
 
-// 15 sec = 1 message worth XP
-const chunks = Math.floor(durationMs / 15_000);
+  const currentXp = doc.xp ?? 0;
+  const oldLevel = levelFromXp(currentXp);
+  const newXp = currentXp + xpGain;
+  const newLevel = levelFromXp(newXp);
 
-let xpGain = 0;
-
-for (let i = 0; i < chunks; i++) {
-  xpGain += Math.floor(Math.random() * (10 - 5 + 1)) + 5;
-}
-
-await UserStatsModel.updateOne(
-  { guildId, userId },
-  minutes > 0 || xpGain > 0
-    ? {
-        $inc: {
-          voiceMinutes: minutes,
-          weeklyVoiceMinutes: minutes,
-          xp: xpGain,
-        },
-        $unset: { voiceJoinedAt: 1 },
-      }
-    : {
+  if (minutes > 0 || xpGain > 0) {
+    await UserStatsModel.updateOne(
+      { guildId, userId },
+      {
+        $inc: { voiceMinutes: minutes, weeklyVoiceMinutes: minutes, xp: xpGain },
+        $set: { level: newLevel },
         $unset: { voiceJoinedAt: 1 },
       },
-);
-  return minutes;
+    );
+  } else {
+    await UserStatsModel.updateOne({ guildId, userId }, { $unset: { voiceJoinedAt: 1 } });
+  }
+
+  return { minutes, xpGained: xpGain, oldLevel, newLevel };
 }
 
 export async function clearAllVoiceSessions(guildId: string): Promise<void> {

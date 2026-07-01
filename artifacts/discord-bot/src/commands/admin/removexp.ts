@@ -1,14 +1,11 @@
 import type { Message } from "discord.js";
 import { getOrCreate, save } from "../../db/models/GuildMember.js";
 import { levelFromXp } from "../../config.js";
+import { errorReply } from "../../lib/reply.js";
 
-export async function removexp(
-  message: Message,
-  args: string[],
-): Promise<void> {
-
+export async function removexp(message: Message, args: string[]): Promise<void> {
   if (!message.member?.permissions.has("Administrator")) {
-    await message.reply("❌ You need Administrator permission.");
+    await errorReply(message, "You need **Administrator** permission to use this command.");
     return;
   }
 
@@ -16,23 +13,16 @@ export async function removexp(
   const amount = Number(args[1]);
 
   if (!target || !amount || amount <= 0) {
-    await message.reply(
-      "❌ Use: `&removexp @user amount`"
-    );
+    await errorReply(message, "Invalid arguments.\nUsage: `&removexp @user <amount>`");
     return;
   }
 
-  const stats = await getOrCreate(
-    message.guildId!,
-    target.id,
-  );
+  const stats = await getOrCreate(message.guildId!, target.id);
 
   stats.xp = Math.max(0, stats.xp - amount);
   stats.level = levelFromXp(stats.xp);
 
   await save(stats);
 
-  await message.reply(
-    `✅ Removed **${amount} XP** from ${target}.\nLevel: **${stats.level}**`
-  );
+  await message.reply(`✅ Removed **${amount} XP** from ${target}.\nLevel: **${stats.level}**`);
 }

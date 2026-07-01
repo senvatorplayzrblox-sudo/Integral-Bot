@@ -3,14 +3,11 @@ import { getOrCreate, save } from "../../db/models/GuildMember.js";
 import { getGuildConfig } from "../../db/models/GuildConfig.js";
 import { levelFromXp } from "../../config.js";
 import { applyLevelRoles } from "../../lib/levelRoles.js";
+import { errorReply } from "../../lib/reply.js";
 
-export async function givexp(
-  message: Message,
-  args: string[],
-): Promise<void> {
-
+export async function givexp(message: Message, args: string[]): Promise<void> {
   if (!message.member?.permissions.has("Administrator")) {
-    await message.reply("❌ You need Administrator permission.");
+    await errorReply(message, "You need **Administrator** permission to use this command.");
     return;
   }
 
@@ -18,7 +15,7 @@ export async function givexp(
   const amount = Number(args[1]);
 
   if (!target || !amount || amount <= 0) {
-    await message.reply("❌ Use: `&givexp @user amount`");
+    await errorReply(message, "Invalid arguments.\nUsage: `&givexp @user <amount>`");
     return;
   }
 
@@ -38,7 +35,5 @@ export async function givexp(
     }
   }
 
-  await message.reply(
-    `✅ Added **${amount} XP** to ${target}.\nLevel: **${stats.level}**`,
-  );
+  await message.reply(`✅ Added **${amount} XP** to ${target}.\nLevel: **${stats.level}**`);
 }

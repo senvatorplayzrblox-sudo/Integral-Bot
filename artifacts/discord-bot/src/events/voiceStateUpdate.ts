@@ -1,6 +1,9 @@
 import type { VoiceState } from "discord.js";
 import { logger } from "../lib/logger.js";
 import { endVoiceSession, startVoiceSession } from "../db/models/GuildMember.js";
+import { getGuildConfig } from "../utils/getGuildConfig.js";
+import { applyLevelRoles } from "../lib/levelRoles.js";
+import { sendLevelUpNotification } from "../lib/levelUp.js";
 
 export default async function onVoiceStateUpdate(
   oldState: VoiceState,
@@ -17,19 +20,29 @@ export default async function onVoiceStateUpdate(
   const isInVoice = newState.channelId !== null;
 
   if (!wasInVoice && isInVoice) {
-    // Joined a voice channel
     await startVoiceSession(guildId, userId, now);
     logger.debug({ userId, channel: newState.channel?.name }, "Voice session started");
     return;
   }
 
   if (wasInVoice && !isInVoice) {
-    // Left voice entirely
-    const minutes = await endVoiceSession(guildId, userId, now);
-    logger.debug({ userId, minutes }, "Voice session ended");
+    const result = await endVoiceSession(guildId, userId, now);
+    logger.debug({ userId, minutes: result.minutes, xpGained: result.xpGained }, "Voice session ended");
+
+    if (result.newLevel > result.oldLevel) {
+      const guildConfig = await getGuildConfig(guildId);
+      await applyLevelRoles(newState.guild, member, result.oldLevel, result.newLevel, guildConfig);
+      await sendLevelUpNotification(
+        newState.guild,
+        userId,
+        result.oldLevel,
+        result.newLevel,
+        guildConfig,
+      );
+    }
+
     return;
   }
 
-  // Switched channels (wasInVoice && isInVoice && different channel):
-  // keep the original voiceJoinedAt — do not reset the timer
+  // Switched channels (wasInVoice && isInVoice): keep original voiceJoinedAt — no timer reset
 }

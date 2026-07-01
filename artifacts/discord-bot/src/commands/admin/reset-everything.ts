@@ -1,21 +1,16 @@
 import type { Message } from "discord.js";
 import { UserStatsModel } from "../../db/models/GuildMember.js";
+import { errorReply } from "../../lib/reply.js";
 
 const OWNER_ID = "1418875905085935637";
 
-export async function resetEverything(
-  message: Message,
-  args: string[],
-): Promise<void> {
-
+export async function resetEverything(message: Message, args: string[]): Promise<void> {
   if (message.author.id !== OWNER_ID) {
-    await message.reply("❌ You cannot use this command.");
+    await errorReply(message, "You cannot use this command.");
     return;
   }
 
-  const target = message.mentions.users.first();
-
-    if (message.content.includes("@everyone")) {
+  if (message.content.includes("@everyone")) {
     await UserStatsModel.updateMany(
       { guildId: message.guildId },
       {
@@ -29,28 +24,22 @@ export async function resetEverything(
         },
       },
     );
-
-    await message.reply(
-      "✅ Reset completed for everyone."
-    );
-
+    await message.reply("✅ Reset completed for everyone in this server.");
     return;
   }
 
+  const target = message.mentions.users.first();
 
   if (!target) {
-    await message.reply(
-      "❌ Use: `&reset-everything @user` or `&reset-everything @everyone`"
+    await errorReply(
+      message,
+      "Please mention a user or @everyone.\nUsage: `&reset-everything @user` or `&reset-everything @everyone`",
     );
     return;
   }
 
-
   await UserStatsModel.updateOne(
-    {
-      guildId: message.guildId,
-      userId: target.id,
-    },
+    { guildId: message.guildId, userId: target.id },
     {
       $set: {
         xp: 0,
@@ -63,8 +52,5 @@ export async function resetEverything(
     },
   );
 
-
-  await message.reply(
-    `✅ Reset completed for ${target}.`
-  );
+  await message.reply(`✅ Reset completed for ${target}.`);
 }

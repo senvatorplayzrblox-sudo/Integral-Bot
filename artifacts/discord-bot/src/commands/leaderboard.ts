@@ -277,7 +277,7 @@ content:
 ${rows.join("\n")}
 
 
-*Page ${p+1}/10 • Levels reset XP to 0*`,
+*Page ${p+1} of 10*`,
 
 components:[
 buildButtons(

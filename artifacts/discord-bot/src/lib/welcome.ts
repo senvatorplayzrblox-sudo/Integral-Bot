@@ -748,22 +748,81 @@ export async function handleWelcomeInteraction(interaction: Interaction): Promis
         return;
       }
 
+      // Capture session data before clearing
+      const savedColor   = session.color ?? 0x5865f2;
+      const savedBanner  = session.bannerUrl;
+      const savedAbove   = session.aboveText || null;
+      const savedTitle   = session.title || null;
+      const savedDesc    = session.description || null;
+      const savedFooter  = session.footer || null;
+
       await updateGuildConfig(guildId, {
-        welcomeAboveText:   session.aboveText || null,
-        welcomeTitle:       session.title || null,
-        welcomeDescription: session.description || null,
-        welcomeFooter:      session.footer || null,
-        welcomeBanner:      session.bannerUrl,
-        welcomeColor:       session.color,
+        welcomeAboveText:   savedAbove,
+        welcomeTitle:       savedTitle,
+        welcomeDescription: savedDesc,
+        welcomeFooter:      savedFooter,
+        welcomeBanner:      savedBanner,
+        welcomeColor:       savedColor,
       });
 
       clearSession(guildId, userId);
 
-      await interaction.update({
-        content: "✅ Welcome configuration saved successfully.",
-        embeds: [],
-        components: [],
-      });
+      // Fetch fresh config so we can show channel + enabled status
+      const saved = await getGuildConfig(guildId);
+
+      const colorHex = `#${savedColor.toString(16).padStart(6, "0").toUpperCase()}`;
+
+      const summaryEmbed = new EmbedBuilder()
+        .setTitle("✅ Welcome Configuration Saved")
+        .setColor(savedColor)
+        .addFields(
+          {
+            name: "Status",
+            value: saved.welcomeEnabled ? "✅ Enabled" : "⏸️ Disabled",
+            inline: true,
+          },
+          {
+            name: "Channel",
+            value: saved.welcomeChannelId ? `<#${saved.welcomeChannelId}>` : "Not set",
+            inline: true,
+          },
+          {
+            name: "Color",
+            value: colorHex,
+            inline: true,
+          },
+          {
+            name: "Above Text",
+            value: savedAbove ? `\`\`\`${savedAbove.slice(0, 80)}\`\`\`` : "None",
+            inline: false,
+          },
+          {
+            name: "Embed Title",
+            value: savedTitle ? `\`${savedTitle.slice(0, 60)}\`` : "None",
+            inline: true,
+          },
+          {
+            name: "Footer",
+            value: savedFooter ? `\`${savedFooter.slice(0, 60)}\`` : "None",
+            inline: true,
+          },
+          {
+            name: "Banner",
+            value: savedBanner ? "✅ Set" : "None",
+            inline: true,
+          },
+          {
+            name: "Available Variables",
+            value:
+              "`{mention}` `{user}` `{username}` `{displayname}`\n" +
+              "`{server}` `{membercount}` `{id}`",
+            inline: false,
+          },
+        );
+
+      if (savedBanner) summaryEmbed.setThumbnail(savedBanner);
+
+      await interaction.update({ content: "", embeds: [summaryEmbed], components: [] });
       return;
     }
 

@@ -11,7 +11,7 @@ import { setlevelchannel } from "../commands/admin/setlevelchannel.js";
 import { setwelcomechannel } from "../commands/admin/setwelcomechannel.js";
 import { welcomesetup } from "../commands/admin/welcomesetup.js";
 import { welcometest } from "../commands/admin/welcometest.js";
-import type { Message } from "discord.js";
+import { EmbedBuilder, type Message } from "discord.js";
 
 export default async function prefixHandler(message: Message): Promise<boolean> {
   if (message.author.bot || !message.inGuild()) return false;
@@ -28,9 +28,11 @@ if (
   guildConfig.botChannelIds.length > 0 &&
   !guildConfig.botChannelIds.includes(message.channel.id)
 ) {
-  await message.reply(
-    `❌ Bot commands can only be used in <#${guildConfig.botChannelIds.join("> or <#")}>`
-  );
+  const channelList = guildConfig.botChannelIds.map((id) => `<#${id}>`).join(", ");
+  const embed = new EmbedBuilder()
+    .setColor(0xe74c3c)
+    .setDescription(`❌  Bot commands can only be used in ${channelList}.`);
+  await message.reply({ embeds: [embed] });
   return true;
 }
 

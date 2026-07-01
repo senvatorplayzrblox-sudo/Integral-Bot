@@ -82,8 +82,8 @@ if (liveDoc?.voiceJoinedAt) {
 
     const filled = Math.round(percent / 10);
     const progressBar =
-      "█".repeat(filled) +
-      "░".repeat(10 - filled);
+      "▰".repeat(filled) +
+      "▱".repeat(10 - filled);
     const content =
 `## 📊 **∫ ${displayName}'s Stats**
 **Level ${level}** • \`${xpInLevel} / ${xpNeeded} XP\` • \`${percent}%\`

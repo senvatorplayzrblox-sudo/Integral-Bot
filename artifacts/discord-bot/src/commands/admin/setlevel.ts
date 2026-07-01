@@ -3,14 +3,11 @@ import { getOrCreate, save } from "../../db/models/GuildMember.js";
 import { getGuildConfig } from "../../db/models/GuildConfig.js";
 import { xpForNextLevel } from "../../config.js";
 import { applyLevelRoles } from "../../lib/levelRoles.js";
+import { errorReply } from "../../lib/reply.js";
 
-export async function setlevel(
-  message: Message,
-  args: string[],
-): Promise<void> {
-
+export async function setlevel(message: Message, args: string[]): Promise<void> {
   if (!message.member?.permissions.has("Administrator")) {
-    await message.reply("❌ You need Administrator permission.");
+    await errorReply(message, "You need **Administrator** permission to use this command.");
     return;
   }
 
@@ -18,12 +15,11 @@ export async function setlevel(
   const level = Number(args[1]);
 
   if (!target || isNaN(level) || level < 0) {
-    await message.reply("❌ Use: `&setlevel @user level`");
+    await errorReply(message, "Invalid arguments.\nUsage: `&setlevel @user <level>`");
     return;
   }
 
   const stats = await getOrCreate(message.guildId!, target.id);
-
   const oldLevel = stats.level;
 
   let xp = 0;

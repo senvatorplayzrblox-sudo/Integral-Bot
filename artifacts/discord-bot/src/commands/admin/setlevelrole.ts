@@ -1,13 +1,10 @@
 import type { Message } from "discord.js";
 import { getGuildConfig, updateGuildConfig } from "../../db/models/GuildConfig.js";
+import { errorReply } from "../../lib/reply.js";
 
-export async function setlevelrole(
-  message: Message,
-  args: string[],
-): Promise<void> {
-
+export async function setlevelrole(message: Message, args: string[]): Promise<void> {
   if (!message.member?.permissions.has("Administrator")) {
-    await message.reply("❌ You need Administrator permission.");
+    await errorReply(message, "You need **Administrator** permission to use this command.");
     return;
   }
 
@@ -15,22 +12,15 @@ export async function setlevelrole(
   const role = message.mentions.roles.first();
 
   if (!level || !role) {
-    await message.reply(
-      "❌ Use: `&setlevelrole 10 @Role`"
-    );
+    await errorReply(message, "Invalid arguments.\nUsage: `&setlevelrole <level> @Role`");
     return;
   }
 
   const config = await getGuildConfig(message.guildId!);
 
   await updateGuildConfig(message.guildId!, {
-    levelRoles: {
-      ...config.levelRoles,
-      [level]: role.id,
-    },
+    levelRoles: { ...config.levelRoles, [level]: role.id },
   });
 
-  await message.reply(
-    `✅ Level ${level} role set to ${role}.`
-  );
+  await message.reply(`✅ Level **${level}** role set to ${role}.`);
 }
