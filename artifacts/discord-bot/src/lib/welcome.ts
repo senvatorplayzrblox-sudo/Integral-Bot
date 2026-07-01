@@ -8,6 +8,7 @@ import {
   TextInputStyle,
   type Attachment,
   type GuildMember,
+  type GuildTextBasedChannel,
   type Interaction,
   type Message,
 } from "discord.js";
@@ -110,6 +111,34 @@ export function buildWelcomeEmbed(
   if (opts.bannerUrl) embed.setImage(opts.bannerUrl);
 
   return embed;
+}
+
+// ── Shared Send Helper ────────────────────────────────────────────────────
+
+export async function sendWelcomeMessage(
+  config: GuildConfig,
+  member: GuildMember,
+  channel: GuildTextBasedChannel,
+): Promise<void> {
+  const aboveText = config.welcomeAboveText
+    ? resolveVars(config.welcomeAboveText, member)
+    : null;
+
+  const embed = buildWelcomeEmbed(
+    {
+      title:       config.welcomeTitle,
+      description: config.welcomeDescription,
+      footer:      config.welcomeFooter,
+      bannerUrl:   config.welcomeBanner,
+      color:       config.welcomeColor,
+    },
+    member,
+  );
+
+  await channel.send({
+    ...(aboveText ? { content: aboveText } : {}),
+    embeds: [embed],
+  });
 }
 
 // ── Attachment Validation ──────────────────────────────────────────────────

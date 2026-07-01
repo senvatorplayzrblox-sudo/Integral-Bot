@@ -1,72 +1,75 @@
 import { EmbedBuilder, type Message } from "discord.js";
 
 export async function usage(message: Message): Promise<void> {
-
   const embed = new EmbedBuilder()
-    .setTitle("📖 Bot Command Usage")
+    .setTitle("📖 Integral — Command Reference")
+    .setColor("Blurple")
     .setDescription(
-`### 📊 Public Commands
-**Everyone can use**
+`### 📊 Slash Commands
+**Available to everyone**
 
-\`/rank\`
-> Shows your XP, level, messages, voice and rank.
+\`/rank [user]\`
+> View XP, level, message count, voice time and leaderboard rank.
 
-\`/leaderboard\`
-> Shows server leaderboard.
-
+\`/leaderboard [category]\`
+> Paginated top-100 — Levels, Messages, Voice, Weekly Messages, Weekly Voice.
 
 ---
 
-### ⚙️ Admin Commands
-**Server Administrators only**
+### ⚙️ Admin — XP & Levels
 
-\`!setlevelrole level @role\`
-> Give a role automatically when a user reaches that level.
-\`!listlevelroles\`
-> Shows all configured level roles.
-
-\`!givexp @user amount\`
+\`&givexp @user <amount>\`
 > Add XP to a user.
 
-\`!removexp @user amount\`
+\`&removexp @user <amount>\`
 > Remove XP from a user.
 
-\`!setlevel @user level\`
-> Set user's level.
+\`&setlevel @user <level>\`
+> Force-set a user's level (and recalculate XP).
 
-\`!setbotchannel #channel1 #channel2\`
-> Allow bot commands in one or more channels.
+\`&setlevelrole <level> @role\`
+> Automatically assign a role when a user reaches that level.
 
-\`!setlevelchannel #channel\`
-> Set level-up message channel.
+\`&listlevelroles\`
+> List all configured level → role mappings.
 
+\`&setlevelchannel #channel\`
+> Set the channel for level-up notifications.
+
+---
+
+### 🎉 Admin — Welcome System
+
+\`&setwelcomechannel #channel\`
+> Set the channel where welcome messages are sent.
+
+\`&welcomesetup\`
+> Open the interactive welcome message builder (buttons & modals).
+
+\`&welcometest [@user]\`
+> Preview the welcome message. Mentions a user to use their data, or defaults to you.
+
+---
+
+### 🔧 Admin — Bot Configuration
+
+\`&setbotchannel #channel1 [#channel2 ...]\`
+> Restrict bot commands to specific channels.
+
+\`&usage\`
+> Show this command reference.
 
 ---
 
 ### 👑 Owner Only
 
-**Owner: Senvator**
+\`&reset-everything @user\`
+> Wipe one user's XP, level, messages and voice stats.
 
-\`!reset-everything @user\`
-> Reset one user's stats.
-
-\`!reset-everything @everyone\`
-> Reset all users' stats.
-
-
----
-
-### ℹ️ Utility
-
-\`!usage\`
-> Shows this command list.`
+\`&reset-everything @everyone\`
+> Wipe all users' stats in this server.`,
     )
-    .setColor("Blurple")
-    .setFooter({
-      text: "Use commands responsibly ✨",
-    });
+    .setFooter({ text: "Prefix: &  •  Slash: /" });
 
-  await message.reply({
-    embeds: [embed],
-  });
+  await message.reply({ embeds: [embed] });
 }
