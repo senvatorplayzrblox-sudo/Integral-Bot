@@ -9,6 +9,10 @@ import {
 export default async function onReady(client: Client): Promise<void> {
   logger.info(`Integral is online as ${client.user?.tag ?? "unknown"}`);
   logger.info(`Serving ${client.guilds.cache.size} guild(s)`);
+  client.user?.setPresence({
+  status: "online",
+});
+  logger.info(`Bot presence: ${client.user?.presence?.status}`);
 
   for (const guild of client.guilds.cache.values()) {
     const now = new Date();
