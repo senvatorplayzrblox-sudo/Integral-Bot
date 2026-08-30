@@ -61,6 +61,13 @@ export async function usage(message: Message): Promise<void> {
 
 ---
 
+### 🎨 Reaction Roles
+
+\`&reactionroles\`
+> Open the per-server colour-role setup. Administrator permission is required to configure, edit, enable, or disable it; everyone can use the published buttons.
+
+---
+
 ### 👑 Owner Only
 
 \`&reset-everything @user\`

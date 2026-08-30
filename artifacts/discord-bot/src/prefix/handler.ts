@@ -11,6 +11,7 @@ import { setlevelchannel }   from "../commands/admin/setlevelchannel.js";
 import { setwelcomechannel } from "../commands/admin/setwelcomechannel.js";
 import { welcomesetup }      from "../commands/admin/welcomesetup.js";
 import { welcometest }       from "../commands/admin/welcometest.js";
+import { reactionroles }     from "../commands/admin/reactionroles.js";
 import { errorReply, successReply } from "../lib/reply.js";
 import type { Message } from "discord.js";
 
@@ -76,6 +77,10 @@ export default async function prefixHandler(message: Message): Promise<boolean> 
 
     case "welcometest":
       await welcometest(message);
+      break;
+
+    case "reactionroles":
+      await reactionroles(message);
       break;
 
     case "reset-everything":

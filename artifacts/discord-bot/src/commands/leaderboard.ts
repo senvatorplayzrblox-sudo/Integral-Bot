@@ -10,22 +10,13 @@ import {
 import type { Command } from "../types.js";
 import type { UserStats } from "../db/models/GuildMember.js";
 
-import {
-  getTopByMessages,
-  getTopByVoice,
-  getTopByWeeklyMessages,
-  getTopByWeeklyVoice,
-  getTopByXp,
-} from "../db/models/GuildMember.js";
+import { UserStatsModel } from "../db/models/GuildMember.js";
 
 import { levelFromXp } from "../config.js";
 import { makeEmbed } from "../lib/reply.js";
 
 
 const PAGE_SIZE = 10;
-const MAX_PAGES = 10;
-
-
 type Category =
   | "levels"
   | "messages"
@@ -42,32 +33,42 @@ const CATEGORY_LABELS: Record<Category, string> = {
   "weekly-voice": "Weekly Voice",
 };
 
+export function getLeaderboardPage(
+  stats: UserStats[],
+  currentMemberIds: Set<string>,
+  page: number,
+  pageSize = PAGE_SIZE,
+): { users: UserStats[]; total: number; totalPages: number; startRank: number } {
+  const filtered = stats.filter((stats) => currentMemberIds.has(stats.userId));
+  const safePage = Math.max(0, page);
+  const start = safePage * pageSize;
+  return {
+    users: filtered.slice(start, start + pageSize),
+    total: filtered.length,
+    totalPages: Math.max(1, Math.ceil(filtered.length / pageSize)),
+    startRank: start + 1,
+  };
+}
+
 
 async function fetchPage(
   guildId: string,
+  currentMemberIds: Set<string>,
   category: Category,
   page: number,
-): Promise<UserStats[]> {
+): Promise<{ users: UserStats[]; total: number; totalPages: number; startRank: number }> {
+  const sortField: Record<Category, keyof UserStats> = {
+    levels: "xp",
+    messages: "messages",
+    voice: "voiceMinutes",
+    "weekly-messages": "weeklyMessages",
+    "weekly-voice": "weeklyVoiceMinutes",
+  };
 
-  const offset = page * PAGE_SIZE;
-
-  switch (category) {
-
-    case "levels":
-      return getTopByXp(guildId, PAGE_SIZE, offset);
-
-    case "messages":
-      return getTopByMessages(guildId, PAGE_SIZE, offset);
-
-    case "voice":
-      return getTopByVoice(guildId, PAGE_SIZE, offset);
-
-    case "weekly-messages":
-      return getTopByWeeklyMessages(guildId, PAGE_SIZE, offset);
-
-    case "weekly-voice":
-      return getTopByWeeklyVoice(guildId, PAGE_SIZE, offset);
-  }
+  const allStats = await UserStatsModel.find({ guildId })
+    .sort({ [sortField[category]]: -1, userId: 1 })
+    .lean<UserStats[]>();
+  return getLeaderboardPage(allStats, currentMemberIds, page);
 }
 
 
@@ -234,33 +235,31 @@ let page = 0;
 
 async function render(p:number){
 
-
-const users = await fetchPage(
+ const currentMemberIds = new Set(
+   (await interaction.guild!.members.fetch()).keys(),
+ );
+ const pageData = await fetchPage(
  guildId,
+ currentMemberIds,
  category,
  p
 );
+ const users = pageData.users;
 
 
 
-const startRank = p * PAGE_SIZE + 1;
+ const startRank = pageData.startRank;
 
 
-const hasMore =
-users.length === PAGE_SIZE &&
-p + 1 < MAX_PAGES;
+ const hasMore = p < pageData.totalPages - 1;
+ const totalPages = pageData.totalPages;
 
 
 
   const rows = (
     await Promise.all(
-      users.map(async (u, i) => {
-        const member = await interaction.guild?.members
-          .fetch(u.userId)
-          .catch(() => null);
-
-        if (!member) return null;
-
+       users.map(async (u, i) => {
+        if (!currentMemberIds.has(u.userId)) return null;
         return formatRow(u, startRank + i, category);
       }),
     )
@@ -277,7 +276,7 @@ content:
 ${rows.join("\n")}
 
 
-*Page ${p+1} of 10*`,
+*Page ${p+1} of ${totalPages}*`,
 
 components:[
 buildButtons(

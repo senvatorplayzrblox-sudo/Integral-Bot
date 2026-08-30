@@ -1,0 +1,1 @@
+- [Workspace build environment](workspace-build-environment.md) — use artifact-specific build-time environment values without persisting unrelated module changes.
