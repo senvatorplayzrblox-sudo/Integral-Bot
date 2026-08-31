@@ -5,6 +5,8 @@ import {
   ChannelSelectMenuBuilder,
   ChannelType,
   EmbedBuilder,
+  FileUploadBuilder,
+  LabelBuilder,
   ModalBuilder,
   PermissionFlagsBits,
   StringSelectMenuBuilder,
@@ -52,6 +54,14 @@ export function getConfiguredRoleIdsToRemove(
   return configuredRoleIds.filter((roleId) => roleId !== selectedRoleId && memberRoleIds.has(roleId));
 }
 
+export function removeConfiguredRoleEntries(
+  roles: ReactionRoleEntry[],
+  selectedRoleIds: Iterable<string>,
+): ReactionRoleEntry[] {
+  const selected = new Set(selectedRoleIds);
+  return roles.filter((role) => !selected.has(role.roleId));
+}
+
 function buildPublishedEmbed(guild: Guild, config: ReactionRoleConfig): EmbedBuilder {
   const embed = new EmbedBuilder()
     .setColor(config.color)
@@ -91,6 +101,7 @@ function buildSetupEmbed(config: ReactionRoleConfig): EmbedBuilder {
       { name: "Title", value: config.title || "Not set", inline: true },
       { name: "Status", value: config.enabled ? "Enabled" : "Disabled", inline: true },
       { name: "Channel", value: config.channelId ? `<#${config.channelId}>` : "Not selected", inline: true },
+      { name: "Image", value: config.imageUrl ? "Configured" : "Not set", inline: true },
       { name: "Colour Roles", value: roles },
     );
 }
@@ -100,6 +111,7 @@ function buildSetupComponents(config: ReactionRoleConfig) {
     new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder().setCustomId(setupCustomId("customize")).setLabel("Customize").setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId(setupCustomId("add")).setLabel("Add Reaction Role").setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(setupCustomId("remove")).setLabel("Remove Reaction Role").setStyle(ButtonStyle.Danger),
       new ButtonBuilder().setCustomId(setupCustomId("preview")).setLabel("Preview").setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId(setupCustomId("save")).setLabel("Confirm / Send").setStyle(ButtonStyle.Success),
     ),
@@ -166,6 +178,36 @@ function parseId(value: string): string | null {
   return value.match(/\d{17,20}/)?.[0] ?? null;
 }
 
+const IMAGE_CONTENT_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+]);
+
+export function isSupportedImage(name: string | null, contentType: string | null): boolean {
+  if (contentType && IMAGE_CONTENT_TYPES.has(contentType.toLowerCase())) return true;
+  return /\.(png|jpe?g|webp|gif)$/i.test(name ?? "");
+}
+
+export function buildImageUploadModal(): ModalBuilder {
+  return new ModalBuilder()
+    .setCustomId(setupCustomId("upload-image-submit"))
+    .setTitle("Upload Reaction Role Image")
+    .addLabelComponents(
+      new LabelBuilder()
+        .setLabel("Image file")
+        .setDescription("PNG, JPG, JPEG, WEBP, or GIF. Choose one file.")
+        .setFileUploadComponent(
+          new FileUploadBuilder()
+            .setCustomId("rr_image_file")
+            .setMinValues(1)
+            .setMaxValues(1)
+            .setRequired(true),
+        ),
+    );
+}
+
 async function botMember(guild: Guild): Promise<GuildMember | null> {
   return guild.members.me ?? guild.members.fetchMe().catch(() => null);
 }
@@ -187,6 +229,25 @@ export async function validateRole(guild: Guild, roleId: string): Promise<{ ok: 
 async function handleSetupButton(interaction: ButtonInteraction, session: ReactionRoleSession): Promise<void> {
   const action = interaction.customId.split(":")[2];
   if (action === "customize") {
+    const currentImage = session.config.imageUrl
+      ? `Current image: ${session.config.imageUrl}`
+      : "No image is currently configured.";
+    await interaction.reply({
+      content: `Customize the reaction-role panel.\n${currentImage}`,
+      components: [
+        new ActionRowBuilder<ButtonBuilder>().addComponents(
+          new ButtonBuilder().setCustomId(setupCustomId("edit-text")).setLabel("Edit Text & Colour").setStyle(ButtonStyle.Primary),
+          new ButtonBuilder().setCustomId(setupCustomId("image-url")).setLabel("Image URL").setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder().setCustomId(setupCustomId("upload-image")).setLabel("Upload Image").setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder().setCustomId(setupCustomId("clear-image")).setLabel("Clear Image").setStyle(ButtonStyle.Danger).setDisabled(!session.config.imageUrl),
+        ),
+      ],
+      ephemeral: true,
+    });
+    return;
+  }
+
+  if (action === "edit-text") {
     const modal = new ModalBuilder().setCustomId(setupCustomId("customize-submit")).setTitle("Customize Reaction Roles");
     modal.addComponents(
       new ActionRowBuilder<TextInputBuilder>().addComponents(
@@ -198,11 +259,37 @@ async function handleSetupButton(interaction: ButtonInteraction, session: Reacti
       new ActionRowBuilder<TextInputBuilder>().addComponents(
         new TextInputBuilder().setCustomId("rr_color").setLabel("HEX colour").setStyle(TextInputStyle.Short).setRequired(true).setValue(`#${session.config.color.toString(16).padStart(6, "0")}`),
       ),
+    );
+    await interaction.showModal(modal);
+    return;
+  }
+
+  if (action === "image-url") {
+    const modal = new ModalBuilder().setCustomId(setupCustomId("image-url-submit")).setTitle("Set Reaction Role Image");
+    modal.addComponents(
       new ActionRowBuilder<TextInputBuilder>().addComponents(
-        new TextInputBuilder().setCustomId("rr_image").setLabel("Image URL (optional)").setStyle(TextInputStyle.Short).setRequired(false).setValue(session.config.imageUrl ?? ""),
+        new TextInputBuilder()
+          .setCustomId("rr_image")
+          .setLabel("Image URL")
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false)
+          .setValue(session.config.imageUrl ?? ""),
       ),
     );
     await interaction.showModal(modal);
+    return;
+  }
+
+  if (action === "upload-image") {
+    await interaction.showModal(buildImageUploadModal());
+    return;
+  }
+
+  if (action === "clear-image") {
+    session.config.imageUrl = null;
+    await updateReactionRoleConfig(session.guildId, { imageUrl: null });
+    await interaction.update({ content: "The reaction-role image was cleared.", components: [] });
+    await refreshSetup(interaction, session);
     return;
   }
 
@@ -221,6 +308,30 @@ async function handleSetupButton(interaction: ButtonInteraction, session: Reacti
       ),
     );
     await interaction.showModal(modal);
+    return;
+  }
+
+  if (action === "remove") {
+    if (session.config.roles.length === 0) {
+      await interaction.reply({ embeds: [makeEmbed("error", "No Roles Configured", "There are no reaction roles to remove.")], ephemeral: true });
+      return;
+    }
+    const menu = new StringSelectMenuBuilder()
+      .setCustomId(setupCustomId("remove-select"))
+      .setPlaceholder("Select role(s) to remove")
+      .setMinValues(1)
+      .setMaxValues(session.config.roles.length)
+      .addOptions(session.config.roles.map((role) =>
+        new StringSelectMenuOptionBuilder()
+          .setLabel(role.displayName.slice(0, 100))
+          .setDescription(role.roleId)
+          .setValue(role.roleId),
+      ));
+    await interaction.reply({
+      content: "Select one or more configured roles to remove. This only changes Integral's configuration; Discord roles and member assignments are not touched.",
+      components: [new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(menu)],
+      ephemeral: true,
+    });
     return;
   }
 
@@ -280,17 +391,41 @@ async function handleSetupModal(interaction: ModalSubmitInteraction, session: Re
       await interaction.reply({ embeds: [makeEmbed("error", "Invalid Colour", "Use a six-digit HEX colour such as `#5865F2`.")], ephemeral: true });
       return;
     }
+    session.config.title = interaction.fields.getTextInputValue("rr_title").trim().slice(0, 256);
+    session.config.description = interaction.fields.getTextInputValue("rr_description").trim().slice(0, 4_000);
+    session.config.color = color;
+    await updateReactionRoleConfig(session.guildId, session.config);
+    await interaction.reply({ embeds: [makeEmbed("success", "Customization Saved", "The reaction-role preview was updated.")], ephemeral: true });
+    await refreshSetup(interaction, session);
+    return;
+  }
+
+  if (action === "image-url-submit") {
     const image = interaction.fields.getTextInputValue("rr_image").trim();
     if (image && !/^https?:\/\//i.test(image)) {
       await interaction.reply({ embeds: [makeEmbed("error", "Invalid Image URL", "The image must use an HTTP or HTTPS URL.")], ephemeral: true });
       return;
     }
-    session.config.title = interaction.fields.getTextInputValue("rr_title").trim().slice(0, 256);
-    session.config.description = interaction.fields.getTextInputValue("rr_description").trim().slice(0, 4_000);
-    session.config.color = color;
     session.config.imageUrl = image || null;
-    await updateReactionRoleConfig(session.guildId, session.config);
-    await interaction.reply({ embeds: [makeEmbed("success", "Customization Saved", "The reaction-role preview was updated.")], ephemeral: true });
+    await updateReactionRoleConfig(session.guildId, { imageUrl: session.config.imageUrl });
+    await interaction.reply({ embeds: [makeEmbed("success", "Image URL Saved", image ? "The image URL will appear in Preview and the published panel." : "The image was cleared.")], ephemeral: true });
+    await refreshSetup(interaction, session);
+    return;
+  }
+
+  if (action === "upload-image-submit") {
+    const files = interaction.fields.getUploadedFiles("rr_image_file", true);
+    const image = files.first();
+    if (!image || !isSupportedImage(image.name, image.contentType)) {
+      await interaction.reply({
+        embeds: [makeEmbed("error", "Unsupported Image", "Upload exactly one PNG, JPG, JPEG, WEBP, or GIF image.")],
+        ephemeral: true,
+      });
+      return;
+    }
+    session.config.imageUrl = image.url;
+    await updateReactionRoleConfig(session.guildId, { imageUrl: session.config.imageUrl });
+    await interaction.reply({ embeds: [makeEmbed("success", "Image Uploaded", "The uploaded image was saved and will appear in Preview and the published panel.")], ephemeral: true });
     await refreshSetup(interaction, session);
     return;
   }
@@ -316,6 +451,20 @@ async function handleSetupModal(interaction: ModalSubmitInteraction, session: Re
     await interaction.reply({ embeds: [makeEmbed("success", "Reaction Role Added", `${displayName} was added to the setup.`)], ephemeral: true });
     await refreshSetup(interaction, session);
   }
+}
+
+async function removeReactionRoles(interaction: StringSelectMenuInteraction, session: ReactionRoleSession): Promise<void> {
+  const selected = new Set(interaction.values);
+  const removed = session.config.roles.filter((role) => selected.has(role.roleId));
+  session.config.roles = removeConfiguredRoleEntries(session.config.roles, selected);
+  await updateReactionRoleConfig(session.guildId, { roles: session.config.roles });
+  await interaction.update({
+    content: removed.length
+      ? `Removed from Integral's configuration: ${removed.map((role) => role.displayName).join(", ")}. Discord roles and member assignments were not changed.`
+      : "No configured roles were removed.",
+    components: [],
+  });
+  await refreshSetup(interaction, session);
 }
 
 async function publishReactionRoles(interaction: ChannelSelectMenuInteraction, session: ReactionRoleSession): Promise<void> {
@@ -457,6 +606,8 @@ export async function handleReactionRoleInteraction(interaction: Interaction): P
   else if (interaction.isModalSubmit()) await handleSetupModal(interaction, session);
   else if (interaction.isChannelSelectMenu() && interaction.customId === setupCustomId("channel-select")) {
     await publishReactionRoles(interaction, session);
+  } else if (interaction.isStringSelectMenu() && interaction.customId === setupCustomId("remove-select")) {
+    await removeReactionRoles(interaction, session);
   }
   return true;
 }
