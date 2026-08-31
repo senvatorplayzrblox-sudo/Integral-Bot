@@ -3,6 +3,7 @@ import mongoose, { Schema, type Document, type Model } from "mongoose";
 export interface ReactionRoleEntry {
   roleId: string;
   displayName: string;
+  buttonColor?: 1 | 2 | 3 | 4;
 }
 
 export interface ReactionRoleConfig {
@@ -36,6 +37,7 @@ const reactionRoleConfigSchema = new Schema<ReactionRoleConfigDocument>({
       {
         roleId: { type: String, required: true },
         displayName: { type: String, required: true },
+        buttonColor: { type: Number, enum: [1, 2, 3, 4], default: 2 },
       },
     ],
     default: [],

@@ -81,7 +81,7 @@ export function buildPublishedComponents(guildId: string, roles: ReactionRoleEnt
         new ButtonBuilder()
           .setCustomId(publishedCustomId(guildId, role.roleId))
           .setLabel(label)
-          .setStyle(ButtonStyle.Secondary),
+          .setStyle(role.buttonColor ?? ButtonStyle.Secondary),
       );
     });
     rows.push(row);
@@ -176,6 +176,60 @@ function parseHex(value: string): number | null {
 
 function parseId(value: string): string | null {
   return value.match(/\d{17,20}/)?.[0] ?? null;
+}
+
+const BUTTON_COLOR_OPTIONS = [
+  { value: String(ButtonStyle.Primary), label: "Blurple", description: "Discord Primary button" },
+  { value: String(ButtonStyle.Secondary), label: "Gray", description: "Discord Secondary button" },
+  { value: String(ButtonStyle.Success), label: "Green", description: "Discord Success button" },
+  { value: String(ButtonStyle.Danger), label: "Red", description: "Discord Danger button" },
+];
+
+function parseButtonColor(value: string): 1 | 2 | 3 | 4 | null {
+  const color = Number(value);
+  return color === ButtonStyle.Primary ||
+    color === ButtonStyle.Secondary ||
+    color === ButtonStyle.Success ||
+    color === ButtonStyle.Danger
+    ? color
+    : null;
+}
+
+export function buildAddReactionRoleModal(): ModalBuilder {
+  return new ModalBuilder()
+    .setCustomId(setupCustomId("add-submit"))
+    .setTitle("Add Colour Role")
+    .addLabelComponents(
+      new LabelBuilder()
+        .setLabel("Role Name")
+        .setTextInputComponent(
+          new TextInputBuilder()
+            .setCustomId("rr_role_name")
+            .setPlaceholder("For example: Ocean Blue")
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true),
+        ),
+      new LabelBuilder()
+        .setLabel("Role ID")
+        .setTextInputComponent(
+          new TextInputBuilder()
+            .setCustomId("rr_role_id")
+            .setPlaceholder("Discord role ID or mention")
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true),
+        ),
+      new LabelBuilder()
+        .setLabel("Button Color")
+        .setDescription("Choose a Discord-compatible button colour.")
+        .setStringSelectMenuComponent(
+          new StringSelectMenuBuilder()
+            .setCustomId("rr_button_color")
+            .setPlaceholder("Choose a button color")
+            .setMinValues(1)
+            .setMaxValues(1)
+            .addOptions(BUTTON_COLOR_OPTIONS),
+        ),
+    );
 }
 
 const IMAGE_CONTENT_TYPES = new Set([
@@ -298,16 +352,7 @@ async function handleSetupButton(interaction: ButtonInteraction, session: Reacti
       await interaction.reply({ embeds: [makeEmbed("error", "Role Limit Reached", "Discord allows at most 25 reaction-role buttons.")], ephemeral: true });
       return;
     }
-    const modal = new ModalBuilder().setCustomId(setupCustomId("add-submit")).setTitle("Add Colour Role");
-    modal.addComponents(
-      new ActionRowBuilder<TextInputBuilder>().addComponents(
-        new TextInputBuilder().setCustomId("rr_role_name").setLabel("Display name").setStyle(TextInputStyle.Short).setRequired(true),
-      ),
-      new ActionRowBuilder<TextInputBuilder>().addComponents(
-        new TextInputBuilder().setCustomId("rr_role_id").setLabel("Discord role ID or mention").setStyle(TextInputStyle.Short).setRequired(true),
-      ),
-    );
-    await interaction.showModal(modal);
+    await interaction.showModal(buildAddReactionRoleModal());
     return;
   }
 
@@ -433,8 +478,13 @@ async function handleSetupModal(interaction: ModalSubmitInteraction, session: Re
   if (action === "add-submit") {
     const roleId = parseId(interaction.fields.getTextInputValue("rr_role_id"));
     const displayName = interaction.fields.getTextInputValue("rr_role_name").trim().slice(0, 70);
+    const buttonColor = parseButtonColor(interaction.fields.getStringSelectValues("rr_button_color")[0]);
     if (!roleId || !displayName) {
       await interaction.reply({ embeds: [makeEmbed("error", "Invalid Role", "Provide a display name and a valid Discord role ID.")], ephemeral: true });
+      return;
+    }
+    if (buttonColor === null) {
+      await interaction.reply({ embeds: [makeEmbed("error", "Invalid Button Colour", "Choose a valid Discord button colour.")], ephemeral: true });
       return;
     }
     if (session.config.roles.some((entry) => entry.roleId === roleId)) {
@@ -446,7 +496,7 @@ async function handleSetupModal(interaction: ModalSubmitInteraction, session: Re
       await interaction.reply({ embeds: [makeEmbed("error", "Role Not Available", validation.reason)], ephemeral: true });
       return;
     }
-    session.config.roles.push({ roleId, displayName });
+    session.config.roles.push({ roleId, displayName, buttonColor });
     await updateReactionRoleConfig(session.guildId, { roles: session.config.roles });
     await interaction.reply({ embeds: [makeEmbed("success", "Reaction Role Added", `${displayName} was added to the setup.`)], ephemeral: true });
     await refreshSetup(interaction, session);
