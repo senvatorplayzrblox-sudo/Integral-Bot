@@ -62,11 +62,19 @@ export function removeConfiguredRoleEntries(
   return roles.filter((role) => !selected.has(role.roleId));
 }
 
+const CUSTOM_EMOJI_MARKUP = /<(?<animated>a?):(?<name>[A-Za-z0-9_~]+):(?<id>\d+)>/g;
+
+export function preserveDiscordEmojiMarkup(text: string): string {
+  return text.replace(CUSTOM_EMOJI_MARKUP, (_match, animated: string, name: string, id: string) =>
+    `<${animated}:${name}:${id}>`,
+  );
+}
+
 function buildPublishedEmbed(guild: Guild, config: ReactionRoleConfig): EmbedBuilder {
   const embed = new EmbedBuilder()
     .setColor(config.color)
-    .setTitle(config.title || guild.name)
-    .setDescription(config.description || "Choose one colour role below.");
+    .setTitle(preserveDiscordEmojiMarkup(config.title || guild.name))
+    .setDescription(preserveDiscordEmojiMarkup(config.description || "Choose one colour role below."));
   if (config.imageUrl) embed.setImage(config.imageUrl);
   return embed;
 }
