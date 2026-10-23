@@ -26,13 +26,13 @@ import {
   type XpEvent,
 } from "../db/models/XpEvent.js";
 import { logger } from "./logger.js";
+import { createXpEventRuntime } from "./xpEventRuntime.js";
 
 const MIN_MULTIPLIER = 2;
 const MAX_MULTIPLIER = 100;
 const MIN_DURATION_HOURS = 1;
 const MAX_DURATION_HOURS = 720;
 const SESSION_TTL_MS = 30 * 60_000;
-const expiryTimers = new Map<string, NodeJS.Timeout>();
 
 type XpEventDraft = { multiplier: number; endsAt: Date };
 
@@ -46,6 +46,28 @@ type AdminSession = {
 };
 
 const sessions = new Map<string, AdminSession>();
+const runtimes = new WeakMap<Client, ReturnType<typeof createXpEventRuntime>>();
+
+function getXpEventRuntime(client: Client): ReturnType<typeof createXpEventRuntime> {
+  let runtime = runtimes.get(client);
+  if (!runtime) {
+    runtime = createXpEventRuntime({
+      store: {
+        getXpEvent,
+        getActiveXpEvents,
+        updateActiveXpEvent,
+        cancelActiveXpEvent,
+        expireXpEvent,
+      },
+      syncAnnouncement: (event, state) => syncAnnouncement(client, event, state),
+      onError: (error, guildId, action) => {
+        logger.error({ err: error, guildId, action }, "XP event lifecycle action failed");
+      },
+    });
+    runtimes.set(client, runtime);
+  }
+  return runtime;
+}
 
 export function calculateBoostedXp(baseXp: number, multiplier: number): number {
   return Math.floor(baseXp * multiplier);
@@ -100,7 +122,7 @@ async function findAnnouncementChannel(
   return channel as GuildTextBasedChannel;
 }
 
-async function syncAnnouncement(
+export async function syncAnnouncement(
   client: Client,
   event: XpEvent,
   state: "live" | "cancelled" | "ended",
@@ -139,68 +161,20 @@ async function syncAnnouncement(
   }
 }
 
-async function expireAndAnnounce(client: Client, guildId: string): Promise<XpEvent | null> {
-  const expired = await expireXpEvent(guildId);
-  if (!expired) return null;
-  const timer = expiryTimers.get(guildId);
-  if (timer) clearTimeout(timer);
-  expiryTimers.delete(guildId);
-  await syncAnnouncement(client, expired, "ended");
-  return expired;
-}
-
-function scheduleEventExpiry(client: Client, event: XpEvent): void {
-  const previous = expiryTimers.get(event.guildId);
-  if (previous) clearTimeout(previous);
-  const delay = Math.max(0, event.endsAt.getTime() - Date.now());
-  const timer = setTimeout(() => {
-    void (async () => {
-      try {
-        const expired = await expireAndAnnounce(client, event.guildId);
-        if (!expired) {
-          const current = await getXpEvent(event.guildId);
-          if (current?.active) scheduleEventExpiry(client, current);
-        }
-      } catch (error) {
-        logger.error({ err: error, guildId: event.guildId }, "XP event expiry failed");
-      }
-    })();
-  }, delay);
-  timer.unref?.();
-  expiryTimers.set(event.guildId, timer);
-}
-
 export async function startXpEventScheduler(client: Client): Promise<void> {
   try {
-    for (const event of await getActiveXpEvents()) {
-      try {
-        if (event.endsAt.getTime() <= Date.now()) {
-          await expireAndAnnounce(client, event.guildId);
-        } else {
-          scheduleEventExpiry(client, event);
-        }
-      } catch (error) {
-        logger.error({ err: error, guildId: event.guildId }, "Failed to restore XP event expiry");
-      }
-    }
+    await getXpEventRuntime(client).restore();
   } catch (error) {
     logger.error({ err: error }, "Failed to restore XP event schedule");
   }
 }
 
 async function getLiveEvent(client: Client, guildId: string): Promise<XpEvent | null> {
-  const event = await getXpEvent(guildId);
-  if (!event?.active) return null;
-  if (event.endsAt.getTime() <= Date.now()) {
-    await expireAndAnnounce(client, guildId);
-    return null;
-  }
-  return event;
+  return getXpEventRuntime(client).getLiveEvent(guildId);
 }
 
 export async function getActiveXpMultiplier(client: Client, guildId: string): Promise<number> {
-  const event = await getLiveEvent(client, guildId);
-  return event?.multiplier ?? 1;
+  return getXpEventRuntime(client).getActiveXpMultiplier(guildId);
 }
 
 function buildStatusEmbed(event: XpEvent | null): EmbedBuilder {
@@ -349,17 +323,21 @@ async function handleConfigurationSubmit(
   const endsAt = new Date(Date.now() + durationHours * 3_600_000);
   const current = await getLiveEvent(interaction.client, session.guildId);
   if (current) {
-    const updated = await updateActiveXpEvent(session.guildId, multiplier, endsAt);
-    if (!updated) {
+    const result = await getXpEventRuntime(interaction.client).updateActiveEvent(
+      session.guildId,
+      multiplier,
+      endsAt,
+    );
+    if (!result) {
       await updatePanel(interaction, session, "The event ended before the update could be saved.");
       return;
     }
-    scheduleEventExpiry(interaction.client, updated);
-    const announcementUpdated = await syncAnnouncement(interaction.client, updated, "live");
     await updatePanel(
       interaction,
       session,
-      announcementUpdated ? "Event updated." : "Event updated, but its announcement could not be reached. Use Refresh to retry.",
+      result.announcementSynced
+        ? "Event updated."
+        : "Event updated, but its announcement could not be reached. Use Refresh to retry.",
     );
     return;
   }
@@ -390,19 +368,17 @@ async function handleButton(interaction: ButtonInteraction, session: AdminSessio
     return;
   }
   if (action === "cancel-confirm") {
-    const cancelled = await cancelActiveXpEvent(session.guildId);
-    if (!cancelled) {
+    const result = await getXpEventRuntime(interaction.client).cancelActiveEvent(session.guildId);
+    if (!result) {
       await updatePanel(interaction, session, "There is no active event to cancel.");
       return;
     }
-    const timer = expiryTimers.get(session.guildId);
-    if (timer) clearTimeout(timer);
-    expiryTimers.delete(session.guildId);
-    const announcementUpdated = await syncAnnouncement(interaction.client, cancelled, "cancelled");
     await updatePanel(
       interaction,
       session,
-      announcementUpdated ? "Event cancelled." : "Event cancelled, but its announcement could not be reached.",
+      result.announcementSynced
+        ? "Event cancelled."
+        : "Event cancelled, but its announcement could not be reached.",
     );
     return;
   }
@@ -434,14 +410,20 @@ async function handleButton(interaction: ButtonInteraction, session: AdminSessio
       await updatePanel(interaction, session, "I couldn't send the announcement. Check my Send Messages permission and try again.");
       return;
     }
-    const started = await startXpEvent({
-      guildId: session.guildId,
-      multiplier: draft.multiplier,
-      endsAt: draft.endsAt,
-      hostId: session.adminId,
-      announcementChannelId: channel.id,
-      announcementMessageId: announcement.id,
-    });
+    let started: XpEvent | null;
+    try {
+      started = await startXpEvent({
+        guildId: session.guildId,
+        multiplier: draft.multiplier,
+        endsAt: draft.endsAt,
+        hostId: session.adminId,
+        announcementChannelId: channel.id,
+        announcementMessageId: announcement.id,
+      });
+    } catch (error) {
+      await announcement.delete().catch(() => {});
+      throw error;
+    }
     if (!started) {
       await announcement.delete().catch(() => {});
       session.draft = undefined;
@@ -449,7 +431,7 @@ async function handleButton(interaction: ButtonInteraction, session: AdminSessio
       return;
     }
     session.draft = undefined;
-    scheduleEventExpiry(interaction.client, started);
+    getXpEventRuntime(interaction.client).schedule(started);
     await updatePanel(interaction, session, "XP event started and announced.");
     return;
   }

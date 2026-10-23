@@ -44,74 +44,101 @@ function toPlain(doc: XpEventDocument | null): XpEvent | null {
   };
 }
 
-export async function getXpEvent(guildId: string): Promise<XpEvent | null> {
-  return toPlain(await XpEventModel.findOne({ guildId }));
-}
+type XpEventModelPort = Pick<
+  Model<XpEventDocument>,
+  "find" | "findOne" | "findOneAndUpdate" | "updateOne"
+>;
 
-export async function getActiveXpEvents(): Promise<XpEvent[]> {
-  const docs = await XpEventModel.find({ active: true });
-  return docs.map((doc) => toPlain(doc)!).filter(Boolean);
-}
-
-export async function startXpEvent(
-  event: Omit<XpEvent, "active" | "startedAt">,
-): Promise<XpEvent | null> {
-  try {
-    await XpEventModel.updateOne(
-      { guildId: event.guildId },
-      { $setOnInsert: { guildId: event.guildId, active: false } },
-      { upsert: true },
-    );
-  } catch (error) {
-    if ((error as { code?: number }).code !== 11000) throw error;
+export function createXpEventRepository(model: XpEventModelPort) {
+  async function getXpEvent(guildId: string): Promise<XpEvent | null> {
+    return toPlain(await model.findOne({ guildId }));
   }
 
-  const now = new Date();
-  return toPlain(await XpEventModel.findOneAndUpdate(
-    {
-      guildId: event.guildId,
-      $or: [{ active: { $ne: true } }, { endsAt: { $lte: now } }],
-    },
-    { $set: { ...event, active: true, startedAt: now } },
-    { returnDocument: "after" },
-  ));
+  async function getActiveXpEvents(): Promise<XpEvent[]> {
+    const docs = await model.find({ active: true });
+    return docs.map((doc) => toPlain(doc)!).filter(Boolean);
+  }
+
+  async function startXpEvent(
+    event: Omit<XpEvent, "active" | "startedAt">,
+  ): Promise<XpEvent | null> {
+    try {
+      await model.updateOne(
+        { guildId: event.guildId },
+        { $setOnInsert: { guildId: event.guildId, active: false } },
+        { upsert: true },
+      );
+    } catch (error) {
+      if ((error as { code?: number }).code !== 11000) throw error;
+    }
+
+    const now = new Date();
+    return toPlain(await model.findOneAndUpdate(
+      {
+        guildId: event.guildId,
+        $or: [{ active: { $ne: true } }, { endsAt: { $lte: now } }],
+      },
+      { $set: { ...event, active: true, startedAt: now } },
+      { returnDocument: "after" },
+    ));
+  }
+
+  async function updateActiveXpEvent(
+    guildId: string,
+    multiplier: number,
+    endsAt: Date,
+  ): Promise<XpEvent | null> {
+    return toPlain(await model.findOneAndUpdate(
+      { guildId, active: true, endsAt: { $gt: new Date() } },
+      { $set: { multiplier, endsAt } },
+      { returnDocument: "after" },
+    ));
+  }
+
+  async function cancelActiveXpEvent(guildId: string): Promise<XpEvent | null> {
+    return toPlain(await model.findOneAndUpdate(
+      { guildId, active: true, endsAt: { $gt: new Date() } },
+      { $set: { active: false } },
+      { returnDocument: "before" },
+    ));
+  }
+
+  async function expireXpEvent(guildId: string, now = new Date()): Promise<XpEvent | null> {
+    return toPlain(await model.findOneAndUpdate(
+      { guildId, active: true, endsAt: { $lte: now } },
+      { $set: { active: false } },
+      { returnDocument: "before" },
+    ));
+  }
+
+  async function setXpEventAnnouncement(
+    guildId: string,
+    channelId: string,
+    messageId: string,
+  ): Promise<void> {
+    await model.updateOne(
+      { guildId },
+      { $set: { announcementChannelId: channelId, announcementMessageId: messageId } },
+    );
+  }
+
+  return {
+    cancelActiveXpEvent,
+    expireXpEvent,
+    getActiveXpEvents,
+    getXpEvent,
+    setXpEventAnnouncement,
+    startXpEvent,
+    updateActiveXpEvent,
+  };
 }
 
-export async function updateActiveXpEvent(
-  guildId: string,
-  multiplier: number,
-  endsAt: Date,
-): Promise<XpEvent | null> {
-  return toPlain(await XpEventModel.findOneAndUpdate(
-    { guildId, active: true, endsAt: { $gt: new Date() } },
-    { $set: { multiplier, endsAt } },
-    { returnDocument: "after" },
-  ));
-}
+const repository = createXpEventRepository(XpEventModel);
 
-export async function cancelActiveXpEvent(guildId: string): Promise<XpEvent | null> {
-  return toPlain(await XpEventModel.findOneAndUpdate(
-    { guildId, active: true, endsAt: { $gt: new Date() } },
-    { $set: { active: false } },
-    { returnDocument: "before" },
-  ));
-}
-
-export async function expireXpEvent(guildId: string, now = new Date()): Promise<XpEvent | null> {
-  return toPlain(await XpEventModel.findOneAndUpdate(
-    { guildId, active: true, endsAt: { $lte: now } },
-    { $set: { active: false } },
-    { returnDocument: "before" },
-  ));
-}
-
-export async function setXpEventAnnouncement(
-  guildId: string,
-  channelId: string,
-  messageId: string,
-): Promise<void> {
-  await XpEventModel.updateOne(
-    { guildId },
-    { $set: { announcementChannelId: channelId, announcementMessageId: messageId } },
-  );
-}
+export const getXpEvent = repository.getXpEvent;
+export const getActiveXpEvents = repository.getActiveXpEvents;
+export const startXpEvent = repository.startXpEvent;
+export const updateActiveXpEvent = repository.updateActiveXpEvent;
+export const cancelActiveXpEvent = repository.cancelActiveXpEvent;
+export const expireXpEvent = repository.expireXpEvent;
+export const setXpEventAnnouncement = repository.setXpEventAnnouncement;
