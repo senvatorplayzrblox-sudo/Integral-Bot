@@ -5,12 +5,14 @@ import { getGuildConfig } from "../db/models/GuildConfig.js";
 import { handleWelcomeInteraction } from "../lib/welcome.js";
 import { makeEmbed } from "../lib/reply.js";
 import { handleReactionRoleInteraction } from "../lib/reactionRoles.js";
+import { handleXpEventInteraction } from "../lib/xpEvent.js";
 
 export default async function onInteractionCreate(
   client: IntegralClient,
   interaction: Interaction,
 ): Promise<void> {
 
+  if (await handleXpEventInteraction(interaction)) return;
   if (await handleReactionRoleInteraction(interaction)) return;
 
   // Route welcome-system buttons and modals before anything else

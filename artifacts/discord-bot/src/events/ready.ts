@@ -5,8 +5,10 @@ import {
   bulkStartVoiceSessions,
   clearAllVoiceSessions,
 } from "../db/models/GuildMember.js";
+import { startXpEventScheduler } from "../lib/xpEvent.js";
 
 export default async function onReady(client: Client): Promise<void> {
+  await startXpEventScheduler(client);
   logger.info(`Integral is online as ${client.user?.tag ?? "unknown"}`);
   logger.info(`Serving ${client.guilds.cache.size} guild(s)`);
   client.user?.setPresence({

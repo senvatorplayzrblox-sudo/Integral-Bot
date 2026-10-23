@@ -1,1 +1,2 @@
 - [Workspace build environment](workspace-build-environment.md) — use artifact-specific build-time environment values without persisting unrelated module changes.
+- [XP event award timing](xp-event-award-timing.md) — apply active multipliers once at existing normal message/voice XP award boundaries; leave manual admin grants unchanged.

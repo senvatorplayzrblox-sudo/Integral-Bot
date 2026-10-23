@@ -13,6 +13,7 @@ import { welcomesetup }      from "../commands/admin/welcomesetup.js";
 import { welcometest }       from "../commands/admin/welcometest.js";
 import { reactionroles }     from "../commands/admin/reactionroles.js";
 import { errorReply, successReply } from "../lib/reply.js";
+import { sendPublicXpEventStatus } from "../lib/xpEvent.js";
 import type { Message } from "discord.js";
 
 export default async function prefixHandler(message: Message): Promise<boolean> {
@@ -81,6 +82,10 @@ export default async function prefixHandler(message: Message): Promise<boolean> 
 
     case "reactionroles":
       await reactionroles(message);
+      break;
+
+    case "xpevent":
+      await sendPublicXpEventStatus(message);
       break;
 
     case "reset-everything":

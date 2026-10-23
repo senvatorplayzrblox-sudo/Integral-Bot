@@ -68,6 +68,16 @@ export async function usage(message: Message): Promise<void> {
 
 ---
 
+### 🚀 XP Events
+
+\`/xpevent\`
+> Administrator-only panel to start, update, cancel or refresh a server XP event.
+
+\`&xpevent\`
+> Public command: check the current XP event status.
+
+---
+
 ### 👑 Owner Only
 
 \`&reset-everything @user\`

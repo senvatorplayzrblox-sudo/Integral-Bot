@@ -4,6 +4,7 @@ import { endVoiceSession, startVoiceSession } from "../db/models/GuildMember.js"
 import { getGuildConfig } from "../utils/getGuildConfig.js";
 import { applyLevelRoles } from "../lib/levelRoles.js";
 import { sendLevelUpNotification } from "../lib/levelUp.js";
+import { getActiveXpMultiplier } from "../lib/xpEvent.js";
 
 export default async function onVoiceStateUpdate(
   oldState: VoiceState,
@@ -26,7 +27,8 @@ export default async function onVoiceStateUpdate(
   }
 
   if (wasInVoice && !isInVoice) {
-    const result = await endVoiceSession(guildId, userId, now);
+    const multiplier = await getActiveXpMultiplier(newState.client, guildId);
+    const result = await endVoiceSession(guildId, userId, now, multiplier);
     logger.debug({ userId, minutes: result.minutes, xpGained: result.xpGained }, "Voice session ended");
 
     if (result.newLevel > result.oldLevel) {

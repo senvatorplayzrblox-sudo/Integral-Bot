@@ -110,6 +110,7 @@ export async function endVoiceSession(
   guildId: string,
   userId: string,
   now: Date,
+  xpMultiplier = 1,
 ): Promise<VoiceSessionResult> {
   const doc = await UserStatsModel.findOne({ guildId, userId }).select("voiceJoinedAt xp");
   if (!doc?.voiceJoinedAt) return { minutes: 0, xpGained: 0, oldLevel: 0, newLevel: 0 };
@@ -125,6 +126,7 @@ export async function endVoiceSession(
 
   const currentXp = doc.xp ?? 0;
   const oldLevel = levelFromXp(currentXp);
+  xpGain = Math.floor(xpGain * xpMultiplier);
   const newXp = currentXp + xpGain;
   const newLevel = levelFromXp(newXp);
 

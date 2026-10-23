@@ -6,6 +6,7 @@ import { config, levelFromXp } from "../config.js";
 import { getGuildConfig } from "../utils/getGuildConfig.js";
 import { applyLevelRoles } from "../lib/levelRoles.js";
 import { sendLevelUpNotification } from "../lib/levelUp.js";
+import { calculateBoostedXp, getActiveXpMultiplier } from "../lib/xpEvent.js";
 
 export default async function onMessageCreate(message: Message): Promise<void> {
   if (await prefixHandler(message)) return;
@@ -23,10 +24,12 @@ export default async function onMessageCreate(message: Message): Promise<void> {
   const onCooldown = msSinceLastXP < config.xp.cooldownSeconds * 1000;
 
   if (!onCooldown) {
-    const gained =
+    const baseGained =
       Math.floor(
         Math.random() * (config.xp.maxPerMessage - config.xp.minPerMessage + 1),
       ) + config.xp.minPerMessage;
+    const multiplier = await getActiveXpMultiplier(message.client, guildId);
+    const gained = calculateBoostedXp(baseGained, multiplier);
 
     const oldLevel = stats.level;
     stats.xp += gained;
