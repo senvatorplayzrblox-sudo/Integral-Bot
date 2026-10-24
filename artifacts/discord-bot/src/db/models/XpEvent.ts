@@ -1,5 +1,8 @@
 import mongoose, { Schema, type Document, type Model } from "mongoose";
 
+export const MIN_XP_EVENT_MULTIPLIER = 2;
+export const MAX_XP_EVENT_MULTIPLIER = 10_000;
+
 export interface XpEvent {
   guildId: string;
   active: boolean;
@@ -17,7 +20,7 @@ const xpEventSchema = new Schema<XpEventDocument>(
   {
     guildId: { type: String, required: true, unique: true },
     active: { type: Boolean, default: false },
-    multiplier: { type: Number, default: 1, min: 1, max: 100 },
+    multiplier: { type: Number, default: 1, min: 1, max: MAX_XP_EVENT_MULTIPLIER },
     endsAt: { type: Date, default: () => new Date(0) },
     hostId: { type: String, default: "" },
     startedAt: { type: Date, default: () => new Date(0) },
@@ -50,6 +53,18 @@ type XpEventModelPort = Pick<
 >;
 
 export function createXpEventRepository(model: XpEventModelPort) {
+  function validateMultiplier(multiplier: number): void {
+    if (
+      !Number.isSafeInteger(multiplier) ||
+      multiplier < MIN_XP_EVENT_MULTIPLIER ||
+      multiplier > MAX_XP_EVENT_MULTIPLIER
+    ) {
+      throw new RangeError(
+        `XP event multiplier must be a whole number from ${MIN_XP_EVENT_MULTIPLIER} to ${MAX_XP_EVENT_MULTIPLIER}.`,
+      );
+    }
+  }
+
   async function getXpEvent(guildId: string): Promise<XpEvent | null> {
     return toPlain(await model.findOne({ guildId }));
   }
@@ -60,8 +75,9 @@ export function createXpEventRepository(model: XpEventModelPort) {
   }
 
   async function startXpEvent(
-    event: Omit<XpEvent, "active" | "startedAt">,
+    event: Omit<XpEvent, "active" | "startedAt"> & { startedAt?: Date },
   ): Promise<XpEvent | null> {
+    validateMultiplier(event.multiplier);
     try {
       await model.updateOne(
         { guildId: event.guildId },
@@ -73,12 +89,13 @@ export function createXpEventRepository(model: XpEventModelPort) {
     }
 
     const now = new Date();
+    const startedAt = event.startedAt ?? now;
     return toPlain(await model.findOneAndUpdate(
       {
         guildId: event.guildId,
         $or: [{ active: { $ne: true } }, { endsAt: { $lte: now } }],
       },
-      { $set: { ...event, active: true, startedAt: now } },
+      { $set: { ...event, active: true, startedAt } },
       { returnDocument: "after" },
     ));
   }
@@ -88,6 +105,7 @@ export function createXpEventRepository(model: XpEventModelPort) {
     multiplier: number,
     endsAt: Date,
   ): Promise<XpEvent | null> {
+    validateMultiplier(multiplier);
     return toPlain(await model.findOneAndUpdate(
       { guildId, active: true, endsAt: { $gt: new Date() } },
       { $set: { multiplier, endsAt } },

@@ -160,6 +160,37 @@ test("allows only one concurrent active event per guild while allowing other gui
   assert.equal(activeEvents.filter((event) => event.guildId === "guild-1").length, 1);
 });
 
+test("persists the full supported multiplier range and rejects invalid values", async () => {
+  const { repository } = createTestRepository();
+  const startedAt = new Date();
+  const endsAt = new Date(startedAt.getTime() + 25 * 24 * 60 * 60_000);
+  const started = await repository.startXpEvent({
+    ...eventFor("guild-max-multiplier", endsAt),
+    multiplier: 10_000,
+    startedAt,
+  });
+
+  assert.equal(started?.multiplier, 10_000);
+  assert.equal(started?.startedAt.getTime(), startedAt.getTime());
+  assert.equal(started?.endsAt.getTime(), endsAt.getTime());
+  await assert.rejects(
+    repository.startXpEvent({ ...eventFor("guild-invalid-start", endsAt), multiplier: 10_001 }),
+    RangeError,
+  );
+  await assert.rejects(
+    repository.startXpEvent({ ...eventFor("guild-invalid-low-start", endsAt), multiplier: 1 }),
+    RangeError,
+  );
+  await assert.rejects(
+    repository.updateActiveXpEvent("guild-max-multiplier", 10_001, endsAt),
+    RangeError,
+  );
+  await assert.rejects(
+    repository.updateActiveXpEvent("guild-max-multiplier", 1, endsAt),
+    RangeError,
+  );
+});
+
 test("updates and cancellation persist state and synchronize the matching announcement", async () => {
   const { repository } = createTestRepository();
   const now = Date.now();
@@ -188,13 +219,25 @@ test("updates and cancellation persist state and synchronize the matching announ
   );
   assert.ok(updated);
   assert.equal(updated.event.multiplier, 12);
-  assert.match(messages.get("message-guild-update") ?? "", /Boost: \*\*12× XP\*\*/);
+  const liveAnnouncement = messages.get("message-guild-update") ?? "";
+  assert.match(liveAnnouncement, /Status: \*\*Active\*\*/);
+  assert.match(liveAnnouncement, /Boost: \*\*12× XP\*\*/);
+  assert.match(liveAnnouncement, /Total duration:/);
+  assert.match(liveAnnouncement, /Ends: <t:\d+:F>/);
+  assert.match(liveAnnouncement, /Time remaining: <t:\d+:R>/);
+  assert.match(liveAnnouncement, /Hosted by: <@admin-1>/);
 
   const cancelled = await verifiedRuntime.cancelActiveEvent("guild-update");
   assert.ok(cancelled);
   assert.equal(cancelled.event.active, true, "the cancellation result carries the pre-update announcement details");
   assert.equal((await repository.getXpEvent("guild-update"))?.active, false);
-  assert.match(messages.get("message-guild-update") ?? "", /XP OVERDRIVE WAS CANCELLED/);
+  const cancelledAnnouncement = messages.get("message-guild-update") ?? "";
+  assert.match(cancelledAnnouncement, /XP OVERDRIVE WAS CANCELLED/);
+  assert.match(cancelledAnnouncement, /Status: \*\*Inactive \(cancelled\)\*\*/);
+  assert.match(cancelledAnnouncement, /Total duration:/);
+  assert.match(cancelledAnnouncement, /Scheduled end: <t:\d+:F>/);
+  assert.match(cancelledAnnouncement, /Time remaining: Not applicable \(cancelled\)/);
+  assert.match(cancelledAnnouncement, /Hosted by: <@admin-1>/);
 });
 
 test("restores an expired event after restart, stops its multiplier, and ends its announcement", async () => {
@@ -212,8 +255,33 @@ test("restores an expired event after restart, stops its multiplier, and ends it
   await restartedRuntime.restore();
 
   assert.equal((await repository.getXpEvent("guild-expired"))?.active, false);
-  assert.match(messages.get("message-guild-expired") ?? "", /XP OVERDRIVE HAS ENDED/);
+  const endedAnnouncement = messages.get("message-guild-expired") ?? "";
+  assert.match(endedAnnouncement, /XP OVERDRIVE HAS ENDED/);
+  assert.match(endedAnnouncement, /Status: \*\*Inactive \(ended\)\*\*/);
+  assert.match(endedAnnouncement, /Total duration:/);
+  assert.match(endedAnnouncement, /Scheduled end: <t:\d+:F>/);
+  assert.match(endedAnnouncement, /Time remaining: 0 minutes/);
+  assert.match(endedAnnouncement, /Hosted by: <@admin-1>/);
   assert.equal(await restartedRuntime.getActiveXpMultiplier("guild-expired"), 1);
+});
+
+test("restores a future multi-day event after restart with its multiplier and expiry timer", async () => {
+  const { repository } = createTestRepository();
+  const now = Date.now();
+  const endsAt = new Date(now + 25 * 24 * 60 * 60_000);
+  const started = await repository.startXpEvent({
+    ...eventFor("guild-restored-future", endsAt),
+    multiplier: 10_000,
+  });
+  assert.ok(started);
+
+  const delays: number[] = [];
+  const restartedRuntime = createRuntime(repository, () => now, async () => true, delays);
+  await restartedRuntime.restore();
+
+  assert.deepEqual(delays, [2_147_483_647]);
+  assert.equal(await restartedRuntime.getActiveXpMultiplier("guild-restored-future"), 10_000);
+  assert.equal((await repository.getXpEvent("guild-restored-future"))?.endsAt.getTime(), endsAt.getTime());
 });
 
 test("caps a long event timer at Node's maximum delay instead of repeatedly firing early", async () => {

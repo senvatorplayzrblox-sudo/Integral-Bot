@@ -20,6 +20,8 @@ import {
   expireXpEvent,
   getActiveXpEvents,
   getXpEvent,
+  MAX_XP_EVENT_MULTIPLIER,
+  MIN_XP_EVENT_MULTIPLIER,
   setXpEventAnnouncement,
   startXpEvent,
   updateActiveXpEvent,
@@ -28,13 +30,12 @@ import {
 import { logger } from "./logger.js";
 import { createXpEventRuntime } from "./xpEventRuntime.js";
 
-const MIN_MULTIPLIER = 2;
-const MAX_MULTIPLIER = 100;
-const MIN_DURATION_HOURS = 1;
-const MAX_DURATION_HOURS = 720;
+const MINUTE_MS = 60_000;
+const HOUR_MS = 60 * MINUTE_MS;
+const DAY_MS = 24 * HOUR_MS;
 const SESSION_TTL_MS = 30 * 60_000;
 
-type XpEventDraft = { multiplier: number; endsAt: Date };
+type XpEventDraft = { multiplier: number; durationMs: number };
 
 type AdminSession = {
   id: string;
@@ -70,11 +71,62 @@ function getXpEventRuntime(client: Client): ReturnType<typeof createXpEventRunti
 }
 
 export function calculateBoostedXp(baseXp: number, multiplier: number): number {
+  if (!Number.isSafeInteger(multiplier) || multiplier < 1 || multiplier > MAX_XP_EVENT_MULTIPLIER) {
+    throw new RangeError(`XP multiplier must be a whole number from 1 to ${MAX_XP_EVENT_MULTIPLIER}.`);
+  }
   return Math.floor(baseXp * multiplier);
 }
 
-function formatTimestamp(date: Date): string {
-  return `<t:${Math.floor(date.getTime() / 1000)}:F> (<t:${Math.floor(date.getTime() / 1000)}:R>)`;
+function formatExactTimestamp(date: Date): string {
+  return `<t:${Math.floor(date.getTime() / 1000)}:F>`;
+}
+
+function formatRelativeTimestamp(date: Date): string {
+  return `<t:${Math.floor(date.getTime() / 1000)}:R>`;
+}
+
+export function formatXpEventDuration(durationMs: number): string {
+  const totalMinutes = Number.isFinite(durationMs)
+    ? Math.max(0, Math.round(durationMs / MINUTE_MS))
+    : 0;
+  const days = Math.floor(totalMinutes / (24 * 60));
+  const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
+  const minutes = totalMinutes % 60;
+  return `${days} Days | ${hours} Hours | ${minutes} Minutes`;
+}
+
+export function parseXpEventDuration(
+  daysText: string,
+  hoursText: string,
+  minutesText: string,
+): number | null {
+  const values = [daysText, hoursText, minutesText].map((value) => value.trim());
+  if (values.some((value) => !/^\d+$/.test(value))) return null;
+  const [days, hours, minutes] = values.map(Number);
+  if (
+    !Number.isSafeInteger(days) ||
+    !Number.isSafeInteger(hours) ||
+    !Number.isSafeInteger(minutes) ||
+    days < 0 ||
+    hours < 0 ||
+    minutes < 0
+  ) return null;
+
+  const durationMs = days * DAY_MS + hours * HOUR_MS + minutes * MINUTE_MS;
+  if (!Number.isSafeInteger(durationMs) || durationMs <= 0) return null;
+  return Number.isNaN(new Date(Date.now() + durationMs).getTime()) ? null : durationMs;
+}
+
+function getTotalDurationMs(event: Pick<XpEvent, "startedAt" | "endsAt">): number {
+  return Math.max(0, event.endsAt.getTime() - event.startedAt.getTime());
+}
+
+function getEventEmoji(
+  guild: Guild | null | undefined,
+  candidates: string[],
+  fallback: string,
+): string {
+  return guild ? findGuildEmoji(guild, candidates, fallback) : fallback;
 }
 
 function findGuildEmoji(guild: Guild, candidates: string[], fallback: string): string {
@@ -85,7 +137,7 @@ function findGuildEmoji(guild: Guild, candidates: string[], fallback: string): s
 
 export function buildXpEventAnnouncement(
   guild: Guild,
-  event: Pick<XpEvent, "multiplier" | "endsAt" | "hostId">,
+  event: Pick<XpEvent, "multiplier" | "endsAt" | "hostId" | "startedAt">,
 ): string {
   const rocket = findGuildEmoji(guild, ["rocket", "overdrive"], "🚀");
   const celebration = findGuildEmoji(guild, ["party", "celebration", "shine"], "🎉");
@@ -93,24 +145,47 @@ export function buildXpEventAnnouncement(
   const clock = findGuildEmoji(guild, ["clock", "time"], "⏰");
   const crown = findGuildEmoji(guild, ["crown", "king"], "👑");
   const fire = findGuildEmoji(guild, ["fire", "flame"], "🔥");
+  const hourglass = findGuildEmoji(guild, ["hourglass", "duration"], "⌛");
   return [
     `${rocket} XP OVERDRIVE IS LIVE! ${rocket}`,
     "",
     `«${celebration} The XP boost has officially landed!`,
     "Your journey to the next level just got a whole lot faster!",
     "",
+    `✅ Status: **Active**`,
     `${lightning} Boost: **${event.multiplier}× XP**`,
-    `${clock} Ends: ${formatTimestamp(event.endsAt)}`,
+    `${hourglass} Total duration: **${formatXpEventDuration(getTotalDurationMs(event))}**`,
+    `${clock} Ends: ${formatExactTimestamp(event.endsAt)}`,
+    `${clock} Time remaining: ${formatRelativeTimestamp(event.endsAt)}`,
     `${crown} Hosted by: <@${event.hostId}>`,
     "",
     `${fire} Jump in and start stacking XP!»`,
   ].join("\n");
 }
 
-function buildEndedAnnouncement(event: XpEvent, cancelled: boolean): string {
-  const title = cancelled ? "🛑 XP OVERDRIVE WAS CANCELLED" : "💤 XP OVERDRIVE HAS ENDED";
+function buildEndedAnnouncement(guild: Guild | null | undefined, event: XpEvent, cancelled: boolean): string {
+  const rocket = getEventEmoji(guild, ["rocket", "overdrive"], "🚀");
+  const stop = getEventEmoji(guild, ["stop", "cancel", "warning"], "🛑");
+  const sleep = getEventEmoji(guild, ["sleep", "moon"], "💤");
+  const lightning = getEventEmoji(guild, ["lightning", "bolt"], "⚡");
+  const hourglass = getEventEmoji(guild, ["hourglass", "duration"], "⌛");
+  const clock = getEventEmoji(guild, ["clock", "time"], "⏰");
+  const crown = getEventEmoji(guild, ["crown", "king"], "👑");
+  const status = cancelled ? "Inactive (cancelled)" : "Inactive (ended)";
   const reason = cancelled ? "The XP boost has been cancelled." : "The scheduled XP boost has ended.";
-  return `${title}\n\n${reason}\n\nBoost: **${event.multiplier}× XP**\nHosted by: <@${event.hostId}>`;
+  return [
+    cancelled ? `${stop} XP OVERDRIVE WAS CANCELLED` : `${sleep} XP OVERDRIVE HAS ENDED`,
+    "",
+    reason,
+    "",
+    `Status: **${status}**`,
+    `${lightning} Boost: **${event.multiplier}× XP**`,
+    `${hourglass} Total duration: **${formatXpEventDuration(getTotalDurationMs(event))}**`,
+    `${clock} Scheduled end: ${formatExactTimestamp(event.endsAt)}`,
+    `${clock} Time remaining: ${cancelled ? "Not applicable (cancelled)" : "0 minutes"}`,
+    `${crown} Hosted by: <@${event.hostId}>`,
+    `${rocket} XP boost is no longer active.`,
+  ].join("\n");
 }
 
 async function findAnnouncementChannel(
@@ -139,7 +214,7 @@ export async function syncAnnouncement(
   }
   const content = state === "live"
     ? buildXpEventAnnouncement(guild!, event)
-    : buildEndedAnnouncement(event, state === "cancelled");
+    : buildEndedAnnouncement(guild, event, state === "cancelled");
   const existing = event.announcementMessageId
     ? await channel.messages.fetch(event.announcementMessageId).catch(() => null)
     : null;
@@ -177,21 +252,41 @@ export async function getActiveXpMultiplier(client: Client, guildId: string): Pr
   return getXpEventRuntime(client).getActiveXpMultiplier(guildId);
 }
 
-function buildStatusEmbed(event: XpEvent | null): EmbedBuilder {
+function buildEventDetails(
+  guild: Guild | null | undefined,
+  event: XpEvent,
+  status: string,
+  remainingTime = formatRelativeTimestamp(event.endsAt),
+): string[] {
+  const check = getEventEmoji(guild, ["check", "success", "active"], "✅");
+  const lightning = getEventEmoji(guild, ["lightning", "bolt"], "⚡");
+  const hourglass = getEventEmoji(guild, ["hourglass", "duration"], "⌛");
+  const clock = getEventEmoji(guild, ["clock", "time"], "⏰");
+  const crown = getEventEmoji(guild, ["crown", "king"], "👑");
+  return [
+    `${check} **Status:** ${status}`,
+    `${lightning} **Boost:** ${event.multiplier}× XP`,
+    `${hourglass} **Total duration:** ${formatXpEventDuration(getTotalDurationMs(event))}`,
+    `${clock} **Ends:** ${formatExactTimestamp(event.endsAt)}`,
+    `${clock} **Time remaining:** ${remainingTime}`,
+    `${crown} **Hosted by:** <@${event.hostId}>`,
+  ];
+}
+
+function buildStatusEmbed(guild: Guild | null | undefined, event: XpEvent | null): EmbedBuilder {
   if (!event) {
+    const sleep = getEventEmoji(guild, ["sleep", "moon"], "💤");
+    const rocket = getEventEmoji(guild, ["rocket", "overdrive"], "🚀");
     return new EmbedBuilder()
       .setColor(0x5865f2)
-      .setTitle("💤 NO XP EVENT")
-      .setDescription("«There is currently no XP boost running. Stay tuned for the next one! 🚀»");
+      .setTitle(`${sleep} NO XP EVENT`)
+      .setDescription(`**Status:** Inactive\n\n«There is currently no XP boost running. Stay tuned for the next one! ${rocket}»`);
   }
+  const rocket = getEventEmoji(guild, ["rocket", "overdrive"], "🚀");
   return new EmbedBuilder()
     .setColor(0x57f287)
-    .setTitle("🚀 XP OVERDRIVE IS LIVE!")
-    .setDescription([
-      `⚡ **Boost:** ${event.multiplier}× XP`,
-      `⏰ **Ends:** ${formatTimestamp(event.endsAt)}`,
-      `👑 **Hosted by:** <@${event.hostId}>`,
-    ].join("\n"));
+    .setTitle(`${rocket} XP OVERDRIVE IS LIVE!`)
+    .setDescription(buildEventDetails(guild, event, "Active").join("\n"));
 }
 
 function buildAdminComponents(session: AdminSession, active: boolean) {
@@ -209,12 +304,28 @@ function buildAdminComponents(session: AdminSession, active: boolean) {
   return [new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons)];
 }
 
-function buildStartConfirmation(session: AdminSession): { embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[] } {
+function buildStartConfirmation(
+  session: AdminSession,
+  guild?: Guild | null,
+): { embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[] } {
   const draft = session.draft!;
+  const estimateEnd = new Date(Date.now() + draft.durationMs);
+  const rocket = getEventEmoji(guild, ["rocket", "overdrive"], "🚀");
+  const hourglass = getEventEmoji(guild, ["hourglass", "duration"], "⌛");
+  const clock = getEventEmoji(guild, ["clock", "time"], "⏰");
+  const lightning = getEventEmoji(guild, ["lightning", "bolt"], "⚡");
+  const crown = getEventEmoji(guild, ["crown", "king"], "👑");
   const embed = new EmbedBuilder()
     .setColor(0xfee75c)
-    .setTitle("Confirm XP Event")
-    .setDescription(`Start a **${draft.multiplier}× XP** event ending ${formatTimestamp(draft.endsAt)}?`);
+    .setTitle(`${rocket} Confirm XP Event`)
+    .setDescription([
+      "Status: **Pending confirmation (inactive)**",
+      `${lightning} **Boost:** ${draft.multiplier}× XP`,
+      `${hourglass} **Total duration:** ${formatXpEventDuration(draft.durationMs)}`,
+      `${clock} **Ends:** ${formatExactTimestamp(estimateEnd)}`,
+      `${clock} **Time remaining:** ${formatRelativeTimestamp(estimateEnd)}`,
+      `${crown} **Hosted by:** <@${session.adminId}>`,
+    ].join("\n"));
   const id = (action: string) => `xpevent:${session.id}:${action}`;
   return {
     embeds: [embed],
@@ -225,10 +336,20 @@ function buildStartConfirmation(session: AdminSession): { embeds: EmbedBuilder[]
   };
 }
 
-function buildCancelConfirmation(session: AdminSession): { embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[] } {
+function buildCancelConfirmation(
+  session: AdminSession,
+  event: XpEvent,
+  guild?: Guild | null,
+): { embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[] } {
   const id = (action: string) => `xpevent:${session.id}:${action}`;
+  const stop = getEventEmoji(guild, ["stop", "cancel", "warning"], "🛑");
+  const description = [
+    "The active boost will stop immediately and its announcement will be updated.",
+    "",
+    ...buildEventDetails(guild, event, "Active"),
+  ].join("\n");
   return {
-    embeds: [new EmbedBuilder().setColor(0xed4245).setTitle("Cancel XP Event?").setDescription("The active boost will stop immediately and its announcement will be updated.")],
+    embeds: [new EmbedBuilder().setColor(0xed4245).setTitle(`${stop} Cancel XP Event?`).setDescription(description)],
     components: [new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder().setCustomId(id("cancel-confirm")).setLabel("Confirm Cancellation").setStyle(ButtonStyle.Danger),
       new ButtonBuilder().setCustomId(id("refresh")).setLabel("Keep Event").setStyle(ButtonStyle.Secondary),
@@ -236,10 +357,28 @@ function buildCancelConfirmation(session: AdminSession): { embeds: EmbedBuilder[
   };
 }
 
+function splitDurationMs(durationMs: number): { days: number; hours: number; minutes: number } {
+  const totalMinutes = Math.max(1, Math.ceil(durationMs / MINUTE_MS));
+  return {
+    days: Math.floor(totalMinutes / (24 * 60)),
+    hours: Math.floor((totalMinutes % (24 * 60)) / 60),
+    minutes: totalMinutes % 60,
+  };
+}
+
 function buildConfigureModal(session: AdminSession, event: XpEvent | null): ModalBuilder {
-  const hours = event
-    ? Math.max(1, Math.ceil((event.endsAt.getTime() - Date.now()) / 3_600_000))
-    : 24;
+  const duration = splitDurationMs(event ? event.endsAt.getTime() - Date.now() : DAY_MS);
+  const durationInput = (customId: string, label: string, value: number) =>
+    new ActionRowBuilder<TextInputBuilder>().addComponents(
+      new TextInputBuilder()
+        .setCustomId(customId)
+        .setLabel(label)
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)
+        .setMinLength(1)
+        .setMaxLength(16)
+        .setValue(String(value)),
+    );
   return new ModalBuilder()
     .setCustomId(`xpevent:${session.id}:configure-submit`)
     .setTitle(event ? "Change / Extend XP Event" : "Configure XP Event")
@@ -247,19 +386,16 @@ function buildConfigureModal(session: AdminSession, event: XpEvent | null): Moda
       new ActionRowBuilder<TextInputBuilder>().addComponents(
         new TextInputBuilder()
           .setCustomId("xp_multiplier")
-          .setLabel("XP multiplier (2–100)")
+          .setLabel("XP multiplier (2–10,000)")
           .setStyle(TextInputStyle.Short)
           .setRequired(true)
+          .setMinLength(1)
+          .setMaxLength(5)
           .setValue(String(event?.multiplier ?? 25)),
       ),
-      new ActionRowBuilder<TextInputBuilder>().addComponents(
-        new TextInputBuilder()
-          .setCustomId("xp_duration")
-          .setLabel("Duration in hours from now (1–720)")
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true)
-          .setValue(String(hours)),
-      ),
+      durationInput("xp_duration_days", "Duration in days", duration.days),
+      durationInput("xp_duration_hours", "Duration in hours", duration.hours),
+      durationInput("xp_duration_minutes", "Duration in minutes", duration.minutes),
     );
 }
 
@@ -284,7 +420,7 @@ async function updatePanel(
   message?: string,
 ): Promise<void> {
   const event = await getLiveEvent(interaction.client, session.guildId);
-  const embed = buildStatusEmbed(event);
+  const embed = buildStatusEmbed(interaction.guild, event);
   if (message) embed.setFooter({ text: message });
   const components = buildAdminComponents(session, Boolean(event));
   if (interaction.isButton()) {
@@ -299,28 +435,31 @@ async function handleConfigurationSubmit(
   session: AdminSession,
 ): Promise<void> {
   const multiplierText = interaction.fields.getTextInputValue("xp_multiplier").trim();
-  const durationText = interaction.fields.getTextInputValue("xp_duration").trim();
+  const daysText = interaction.fields.getTextInputValue("xp_duration_days").trim();
+  const hoursText = interaction.fields.getTextInputValue("xp_duration_hours").trim();
+  const minutesText = interaction.fields.getTextInputValue("xp_duration_minutes").trim();
   const multiplier = Number(multiplierText);
-  const durationHours = Number(durationText);
   if (
     !/^\d+$/.test(multiplierText) ||
-    !Number.isInteger(multiplier) ||
-    multiplier < MIN_MULTIPLIER ||
-    multiplier > MAX_MULTIPLIER
+    !Number.isSafeInteger(multiplier) ||
+    multiplier < MIN_XP_EVENT_MULTIPLIER ||
+    multiplier > MAX_XP_EVENT_MULTIPLIER
   ) {
-    await interaction.reply({ content: "Multiplier must be a whole number from 2 to 100.", ephemeral: true });
+    await interaction.reply({
+      content: `Multiplier must be a whole number from ${MIN_XP_EVENT_MULTIPLIER} to ${MAX_XP_EVENT_MULTIPLIER}.`,
+      ephemeral: true,
+    });
     return;
   }
-  if (
-    !/^\d+$/.test(durationText) ||
-    !Number.isInteger(durationHours) ||
-    durationHours < MIN_DURATION_HOURS ||
-    durationHours > MAX_DURATION_HOURS
-  ) {
-    await interaction.reply({ content: "Duration must be a whole number of hours from 1 to 720.", ephemeral: true });
+  const durationMs = parseXpEventDuration(daysText, hoursText, minutesText);
+  if (durationMs === null) {
+    await interaction.reply({
+      content: "Days, hours, and minutes must each be non-negative whole numbers (0 is allowed), and the total duration must be at least 1 minute.",
+      ephemeral: true,
+    });
     return;
   }
-  const endsAt = new Date(Date.now() + durationHours * 3_600_000);
+  const endsAt = new Date(Date.now() + durationMs);
   const current = await getLiveEvent(interaction.client, session.guildId);
   if (current) {
     const result = await getXpEventRuntime(interaction.client).updateActiveEvent(
@@ -341,8 +480,8 @@ async function handleConfigurationSubmit(
     );
     return;
   }
-  session.draft = { multiplier, endsAt };
-  await interaction.reply({ ...buildStartConfirmation(session), ephemeral: true });
+  session.draft = { multiplier, durationMs };
+  await interaction.reply({ ...buildStartConfirmation(session, interaction.guild), ephemeral: true });
 }
 
 async function handleButton(interaction: ButtonInteraction, session: AdminSession, action: string): Promise<void> {
@@ -359,12 +498,12 @@ async function handleButton(interaction: ButtonInteraction, session: AdminSessio
     const event = await getLiveEvent(interaction.client, session.guildId);
     if (!event) {
       await interaction.update({
-        embeds: [buildStatusEmbed(null)],
+        embeds: [buildStatusEmbed(interaction.guild, null)],
         components: buildAdminComponents(session, false),
       });
       return;
     }
-    await interaction.update(buildCancelConfirmation(session));
+    await interaction.update(buildCancelConfirmation(session, event, interaction.guild));
     return;
   }
   if (action === "cancel-confirm") {
@@ -400,8 +539,21 @@ async function handleButton(interaction: ButtonInteraction, session: AdminSessio
       await updatePanel(interaction, session, "The original command channel is unavailable, so no event was started.");
       return;
     }
+    const startedAt = new Date();
+    const endsAt = new Date(startedAt.getTime() + draft.durationMs);
+    if (Number.isNaN(endsAt.getTime())) {
+      await updatePanel(interaction, session, "That duration is too large to schedule. Configure a shorter duration.");
+      return;
+    }
     const announcement = await (channel as GuildTextBasedChannel)
-      .send({ content: buildXpEventAnnouncement(guild, { ...draft, hostId: session.adminId }) })
+      .send({
+        content: buildXpEventAnnouncement(guild, {
+          multiplier: draft.multiplier,
+          endsAt,
+          hostId: session.adminId,
+          startedAt,
+        }),
+      })
       .catch((error) => {
         logger.error({ err: error, guildId: session.guildId }, "Failed to send XP event announcement");
         return null;
@@ -415,8 +567,9 @@ async function handleButton(interaction: ButtonInteraction, session: AdminSessio
       started = await startXpEvent({
         guildId: session.guildId,
         multiplier: draft.multiplier,
-        endsAt: draft.endsAt,
+        endsAt,
         hostId: session.adminId,
+        startedAt,
         announcementChannelId: channel.id,
         announcementMessageId: announcement.id,
       });
@@ -479,7 +632,7 @@ export async function openXpEventAdminPanel(interaction: Interaction): Promise<v
   sessions.set(session.id, session);
   const event = await getLiveEvent(interaction.client, session.guildId);
   await interaction.reply({
-    embeds: [buildStatusEmbed(event)],
+    embeds: [buildStatusEmbed(interaction.guild, event)],
     components: buildAdminComponents(session, Boolean(event)),
     ephemeral: true,
   });
@@ -488,5 +641,5 @@ export async function openXpEventAdminPanel(interaction: Interaction): Promise<v
 export async function sendPublicXpEventStatus(message: Message): Promise<void> {
   if (!message.guild) return;
   const event = await getLiveEvent(message.client, message.guild.id);
-  await message.reply({ embeds: [buildStatusEmbed(event)] });
+  await message.reply({ embeds: [buildStatusEmbed(message.guild, event)] });
 }
