@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { mock, test } from "node:test";
+import { levelFromXp, xpForNextLevel } from "../config.js";
 
 let activeMultiplier = 1;
-let currentStats: Record<string, unknown>;
+let currentStats: Record<string, unknown> = {};
 let savedStats: Record<string, unknown> | undefined;
 let voiceAward: unknown[] | undefined;
 
@@ -17,8 +18,25 @@ const calculateBoostedXp = mock.fn((baseXp: number, multiplier: number) =>
 const startVoiceSession = mock.fn(async () => {});
 const endVoiceSession = mock.fn(async (...args: unknown[]) => {
   voiceAward = args;
-  return { minutes: 1, xpGained: 96, oldLevel: 0, newLevel: 0 };
+  const multiplier = Number(args[3] ?? 1);
+  const xpGained = Math.floor(32 * multiplier);
+  const oldLevel = Number(currentStats["level"] ?? 0);
+  const newXp = Number(currentStats["xp"] ?? 0) + xpGained;
+  const newLevel = levelFromXp(newXp);
+
+  currentStats["xp"] = newXp;
+  currentStats["level"] = newLevel;
+  savedStats = structuredClone(currentStats);
+
+  return { minutes: 1, xpGained, oldLevel, newLevel };
 });
+const guildConfig = {
+  levelChannelId: "level-channel",
+  levelRoles: { "1": "role-1" },
+};
+const getGuildConfig = mock.fn(async () => guildConfig);
+const applyLevelRoles = mock.fn(async (..._args: unknown[]) => {});
+const sendLevelUpNotification = mock.fn(async (..._args: unknown[]) => {});
 
 mock.module(new URL("../prefix/handler.js", import.meta.url).href, {
   exports: { default: async () => false },
@@ -28,6 +46,15 @@ mock.module(new URL("../db/models/GuildMember.js", import.meta.url).href, {
 } as never);
 mock.module(new URL("../lib/xpEvent.js", import.meta.url).href, {
   exports: { getActiveXpMultiplier, calculateBoostedXp },
+} as never);
+mock.module(new URL("../utils/getGuildConfig.js", import.meta.url).href, {
+  exports: { getGuildConfig },
+} as never);
+mock.module(new URL("../lib/levelRoles.js", import.meta.url).href, {
+  exports: { applyLevelRoles },
+} as never);
+mock.module(new URL("../lib/levelUp.js", import.meta.url).href, {
+  exports: { sendLevelUpNotification },
 } as never);
 mock.module(new URL("../lib/reply.js", import.meta.url).href, {
   exports: {
@@ -56,20 +83,47 @@ function freshStats(): Record<string, unknown> {
   };
 }
 
-async function awardMessage(multiplier: number): Promise<Record<string, unknown>> {
+function resetLevelEffectMocks(): void {
+  getGuildConfig.mock.resetCalls();
+  applyLevelRoles.mock.resetCalls();
+  sendLevelUpNotification.mock.resetCalls();
+}
+
+async function deliverMessage(
+  multiplier: number,
+  startingXp = 0,
+): Promise<{
+  stats: Record<string, unknown>;
+  guild: Record<string, unknown>;
+  member: Record<string, unknown>;
+}> {
   activeMultiplier = multiplier;
   currentStats = freshStats();
+  currentStats["xp"] = startingXp;
+  currentStats["level"] = levelFromXp(startingXp);
   savedStats = undefined;
+  resetLevelEffectMocks();
 
+  const member = { id: "user-1", user: { bot: false } };
+  const guild = {
+    id: "guild-1",
+    members: { fetch: mock.fn(async () => member) },
+  };
   await onMessageCreate({
     author: { id: "user-1", bot: false },
     inGuild: () => true,
     guildId: "guild-1",
+    guild,
+    channelId: "channel-1",
     client: {},
   } as never);
 
   assert.ok(savedStats);
-  return savedStats;
+  return { stats: savedStats, guild, member };
+}
+
+async function awardMessage(multiplier: number): Promise<Record<string, unknown>> {
+  return (await deliverMessage(multiplier)).stats;
 }
 
 test("message XP applies an active event multiplier once after base XP is rolled", async (t) => {
@@ -110,13 +164,27 @@ test("message XP applies an active event multiplier once after base XP is rolled
   });
 });
 
-async function awardVoiceSession(multiplier: number): Promise<unknown[] | undefined> {
+async function deliverVoiceSession(
+  multiplier: number,
+  startingXp = 0,
+): Promise<{
+  award: unknown[] | undefined;
+  stats: Record<string, unknown>;
+  guild: Record<string, unknown>;
+  member: Record<string, unknown>;
+}> {
   activeMultiplier = multiplier;
+  currentStats = freshStats();
+  currentStats["xp"] = startingXp;
+  currentStats["level"] = levelFromXp(startingXp);
+  savedStats = undefined;
   voiceAward = undefined;
   endVoiceSession.mock.resetCalls();
   getActiveXpMultiplier.mock.resetCalls();
+  resetLevelEffectMocks();
 
   const member = { id: "user-1", user: { bot: false } };
+  const guild = { id: "guild-1" };
   await onVoiceStateUpdate(
     {
       channelId: "voice-1",
@@ -125,14 +193,19 @@ async function awardVoiceSession(multiplier: number): Promise<unknown[] | undefi
     {
       channelId: null,
       member,
-      guild: { id: "guild-1" },
+      guild,
       client: {},
     } as never,
   );
 
   assert.equal(getActiveXpMultiplier.mock.callCount(), 1);
   assert.equal(endVoiceSession.mock.callCount(), 1);
-  return voiceAward as unknown[] | undefined;
+  assert.ok(savedStats);
+  return { award: voiceAward, stats: savedStats, guild, member };
+}
+
+async function awardVoiceSession(multiplier: number): Promise<unknown[] | undefined> {
+  return (await deliverVoiceSession(multiplier)).award;
 }
 
 test("voice-session XP uses the active multiplier once and stays normal without an event", async (t) => {
@@ -151,6 +224,80 @@ test("voice-session XP uses the active multiplier once and stays normal without 
   await t.test("event has expired", async () => {
     const actualVoiceAward = await awardVoiceSession(1);
     assert.equal(actualVoiceAward?.[3], 1);
+  });
+});
+
+test("boosted message XP triggers level-up effects once only when it crosses a level", async (t) => {
+  await t.test("boosted award crosses a level", async () => {
+    const startingXp = xpForNextLevel(0) - 20;
+    const { stats, guild, member } = await deliverMessage(3, startingXp);
+
+    assert.equal(stats["xp"], xpForNextLevel(0) + 4);
+    assert.equal(stats["level"], 1);
+    assert.equal(getGuildConfig.mock.callCount(), 1);
+    assert.equal(applyLevelRoles.mock.callCount(), 1);
+    assert.deepEqual(applyLevelRoles.mock.calls[0]?.arguments, [
+      guild,
+      member,
+      0,
+      1,
+      guildConfig,
+    ]);
+    assert.equal(sendLevelUpNotification.mock.callCount(), 1);
+    assert.deepEqual(sendLevelUpNotification.mock.calls[0]?.arguments, [
+      guild,
+      "user-1",
+      0,
+      1,
+      guildConfig,
+      "channel-1",
+    ]);
+  });
+
+  await t.test("award does not cross a level", async () => {
+    const { stats } = await deliverMessage(1);
+
+    assert.equal(stats["level"], 0);
+    assert.equal(getGuildConfig.mock.callCount(), 0);
+    assert.equal(applyLevelRoles.mock.callCount(), 0);
+    assert.equal(sendLevelUpNotification.mock.callCount(), 0);
+  });
+});
+
+test("boosted voice-session XP triggers level-up effects once only when it crosses a level", async (t) => {
+  await t.test("boosted award crosses a level and saves the new level", async () => {
+    const startingXp = xpForNextLevel(0) - 80;
+    const { award, stats, guild, member } = await deliverVoiceSession(3, startingXp);
+
+    assert.equal(award?.[3], 3);
+    assert.equal(stats["xp"], xpForNextLevel(0) + 16);
+    assert.equal(stats["level"], 1);
+    assert.equal(getGuildConfig.mock.callCount(), 1);
+    assert.equal(applyLevelRoles.mock.callCount(), 1);
+    assert.deepEqual(applyLevelRoles.mock.calls[0]?.arguments, [
+      guild,
+      member,
+      0,
+      1,
+      guildConfig,
+    ]);
+    assert.equal(sendLevelUpNotification.mock.callCount(), 1);
+    assert.deepEqual(sendLevelUpNotification.mock.calls[0]?.arguments, [
+      guild,
+      "user-1",
+      0,
+      1,
+      guildConfig,
+    ]);
+  });
+
+  await t.test("award does not cross a level", async () => {
+    const { stats } = await deliverVoiceSession(1);
+
+    assert.equal(stats["level"], 0);
+    assert.equal(getGuildConfig.mock.callCount(), 0);
+    assert.equal(applyLevelRoles.mock.callCount(), 0);
+    assert.equal(sendLevelUpNotification.mock.callCount(), 0);
   });
 });
 

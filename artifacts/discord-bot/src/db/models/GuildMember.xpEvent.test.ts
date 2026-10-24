@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { mock, test } from "node:test";
+import { xpForNextLevel } from "../../config.js";
 import { endVoiceSession, UserStatsModel } from "./GuildMember.js";
 
 test("voice XP applies an event multiplier once to the normal session total", async (t) => {
@@ -7,7 +8,7 @@ test("voice XP applies an event multiplier once to the normal session total", as
   const now = new Date(joinedAt.getTime() + 60_000);
   let update: Record<string, unknown> | undefined;
   const findOne = mock.method(UserStatsModel, "findOne", () => ({
-    select: async () => ({ voiceJoinedAt: joinedAt, xp: 0 }),
+      select: async () => ({ voiceJoinedAt: joinedAt, xp: xpForNextLevel(0) - 80 }),
   }) as never);
   const updateOne = mock.method(UserStatsModel, "updateOne", async (_filter: unknown, updateDoc: unknown) => {
     update = updateDoc as Record<string, unknown>;
@@ -21,6 +22,7 @@ test("voice XP applies an event multiplier once to the normal session total", as
     assert.equal(result.minutes, 1);
     assert.equal(result.xpGained, 96, "four normal 8 XP voice chunks are multiplied once");
     assert.equal((update?.["$inc"] as Record<string, number>)["xp"], 96);
+    assert.equal((update?.["$set"] as Record<string, number>)["level"], 1);
   } finally {
     findOne.mock.restore();
     updateOne.mock.restore();
