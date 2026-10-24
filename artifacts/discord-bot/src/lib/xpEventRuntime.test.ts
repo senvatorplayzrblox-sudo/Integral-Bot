@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Client } from "discord.js";
 import { createXpEventRepository, type XpEvent } from "../db/models/XpEvent.js";
-import { syncAnnouncement } from "./xpEvent.js";
+import { calculateBoostedXp, syncAnnouncement } from "./xpEvent.js";
 import { createXpEventRuntime } from "./xpEventRuntime.js";
 
 type Query = Record<string, unknown>;
@@ -238,6 +238,24 @@ test("updates and cancellation persist state and synchronize the matching announ
   assert.match(cancelledAnnouncement, /Scheduled end: <t:\d+:F>/);
   assert.match(cancelledAnnouncement, /Time remaining: Not applicable \(cancelled\)/);
   assert.match(cancelledAnnouncement, /Hosted by: <@admin-1>/);
+});
+
+test("cancelling an active event immediately restores normal XP rewards", async () => {
+  const { repository } = createTestRepository();
+  const now = Date.now();
+  await repository.startXpEvent(eventFor("guild-cancel-boost", new Date(now + 60_000)));
+  const runtime = createRuntime(repository, () => now, async () => true);
+
+  const activeMultiplier = await runtime.getActiveXpMultiplier("guild-cancel-boost");
+  assert.equal(activeMultiplier, 3, "the active event continues to boost rewards");
+  assert.equal(calculateBoostedXp(8, activeMultiplier), 24);
+
+  const cancelled = await runtime.cancelActiveEvent("guild-cancel-boost");
+  assert.ok(cancelled);
+
+  const multiplierAfterCancellation = await runtime.getActiveXpMultiplier("guild-cancel-boost");
+  assert.equal(multiplierAfterCancellation, 1, "a fresh lookup stops boosting as soon as cancellation completes");
+  assert.equal(calculateBoostedXp(8, multiplierAfterCancellation), 8);
 });
 
 test("restores an expired event after restart, stops its multiplier, and ends its announcement", async () => {
