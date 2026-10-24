@@ -230,13 +230,13 @@ importers:
       pino-pretty:
         specifier: ^13.1.3
         version: 13.1.3
+      tsx:
+        specifier: 'catalog:'
+        version: 4.21.0
     devDependencies:
       '@types/node':
         specifier: 'catalog:'
         version: 25.6.2
-      tsx:
-        specifier: 'catalog:'
-        version: 4.21.0
 
   artifacts/mockup-sandbox:
     devDependencies:
