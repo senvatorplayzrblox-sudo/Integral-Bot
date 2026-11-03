@@ -71,8 +71,8 @@ function getXpEventRuntime(client: Client): ReturnType<typeof createXpEventRunti
 }
 
 export function calculateBoostedXp(baseXp: number, multiplier: number): number {
-  if (!Number.isSafeInteger(multiplier) || multiplier < 1 || multiplier > MAX_XP_EVENT_MULTIPLIER) {
-    throw new RangeError(`XP multiplier must be a whole number from 1 to ${MAX_XP_EVENT_MULTIPLIER}.`);
+  if (!Number.isSafeInteger(multiplier) || multiplier < MIN_XP_EVENT_MULTIPLIER || multiplier > MAX_XP_EVENT_MULTIPLIER) {
+    throw new RangeError(`XP multiplier must be a whole number from ${MIN_XP_EVENT_MULTIPLIER} to ${MAX_XP_EVENT_MULTIPLIER}.`);
   }
   return Math.floor(baseXp * multiplier);
 }
