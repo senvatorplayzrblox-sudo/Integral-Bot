@@ -20,7 +20,7 @@ const xpEventSchema = new Schema<XpEventDocument>(
   {
     guildId: { type: String, required: true, unique: true },
     active: { type: Boolean, default: false },
-    multiplier: { type: Number, default: 1, min: 1, max: MAX_XP_EVENT_MULTIPLIER },
+    multiplier: { type: Number, default: MIN_XP_EVENT_MULTIPLIER, min: MIN_XP_EVENT_MULTIPLIER, max: MAX_XP_EVENT_MULTIPLIER },
     endsAt: { type: Date, default: () => new Date(0) },
     hostId: { type: String, default: "" },
     startedAt: { type: Date, default: () => new Date(0) },
