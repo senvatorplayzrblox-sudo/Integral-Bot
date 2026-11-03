@@ -113,10 +113,12 @@ export function createXpEventRuntime(dependencies: XpEventRuntimeDependencies) {
     };
   }
 
-  async function getActiveXpMultiplier(guildId: string): Promise<number> {
-    const event = await getLiveEvent(guildId);
-    return event?.multiplier ?? 1;
-  }
+  async function getActiveXpMultiplier(
+  guildId: string,
+): Promise<number | null> {
+  const event = await getLiveEvent(guildId);
+  return event?.multiplier ?? null;
+}
 
   return {
     cancelActiveEvent,
