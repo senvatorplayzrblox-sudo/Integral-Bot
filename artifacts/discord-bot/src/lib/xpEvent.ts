@@ -136,6 +136,67 @@ function findGuildEmoji(guild: Guild, candidates: string[], fallback: string): s
 }
 
 export function buildXpEventAnnouncement(
+  function buildEndedAnnouncementEmbed(
+  guild: Guild | null | undefined,
+  event: XpEvent,
+  cancelled: boolean,
+): EmbedBuilder {
+  const rocket = getEventEmoji(guild, ["rocket", "overdrive"], "🚀");
+  const stop = getEventEmoji(guild, ["stop", "cancel", "warning"], "🛑");
+  const sleep = getEventEmoji(guild, ["sleep", "moon"], "💤");
+  const lightning = getEventEmoji(guild, ["lightning", "bolt"], "⚡");
+  const hourglass = getEventEmoji(guild, ["hourglass", "duration"], "⌛");
+  const clock = getEventEmoji(guild, ["clock", "time"], "⏰");
+  const crown = getEventEmoji(guild, ["crown", "king"], "👑");
+
+  return new EmbedBuilder()
+    .setColor(cancelled ? 0xed4245 : 0x5865f2)
+    .setTitle(
+      cancelled
+        ? `${stop} XP OVERDRIVE WAS CANCELLED`
+        : `${sleep} XP OVERDRIVE HAS ENDED`,
+    )
+    .setDescription(
+      cancelled
+        ? "The XP boost has been cancelled."
+        : "The scheduled XP boost has ended.",
+    )
+    .addFields(
+      {
+        name: "Status",
+        value: cancelled ? "🛑 Inactive (cancelled)" : "💤 Inactive (ended)",
+        inline: true,
+      },
+      {
+        name: "Boost",
+        value: `${lightning} ${event.multiplier}× XP`,
+        inline: true,
+      },
+      {
+        name: "Duration",
+        value: `${hourglass} ${formatXpEventDuration(getTotalDurationMs(event))}`,
+        inline: false,
+      },
+      {
+        name: "Scheduled End",
+        value: `${clock} ${formatExactTimestamp(event.endsAt)}`,
+        inline: true,
+      },
+      {
+        name: "Time Remaining",
+        value: cancelled
+          ? "Not applicable (cancelled)"
+          : "0 minutes",
+        inline: true,
+      },
+      {
+        name: "Hosted By",
+        value: `${crown} <@${event.hostId}>`,
+        inline: false,
+      },
+    )
+    .setFooter({ text: `${rocket} XP boost is no longer active.` });
+}
   function buildXpEventAnnouncementEmbed(
   guild: Guild,
   event: Pick<XpEvent, "multiplier" | "endsAt" | "hostId" | "startedAt">,
