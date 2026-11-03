@@ -325,13 +325,13 @@ export async function syncAnnouncement(
   try {
     if (existing) {
       try {
-        await existing.edit({ content });
+        await existing.edit({ content: "", embeds: [embed] });
         return true;
       } catch (error) {
         logger.warn({ err: error, guildId: event.guildId }, "XP event announcement edit failed; posting a replacement");
       }
     }
-    const replacement = await channel.send({ content });
+    const replacement = await channel.send({ embeds: [embed] });
     await setXpEventAnnouncement(event.guildId, channel.id, replacement.id);
     return true;
   } catch (error) {
