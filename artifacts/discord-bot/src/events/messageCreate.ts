@@ -6,7 +6,10 @@ import { config, levelFromXp } from "../config.js";
 import { getGuildConfig } from "../utils/getGuildConfig.js";
 import { applyLevelRoles } from "../lib/levelRoles.js";
 import { sendLevelUpNotification } from "../lib/levelUp.js";
-import { calculateBoostedXp, getActiveXpMultiplier } from "../lib/xpEvent.js";
+import {
+  calculateBoostedXp,
+  getActiveXpMultiplier,
+} from "../lib/xpEvent.js";
 
 export default async function onMessageCreate(message: Message): Promise<void> {
   if (await prefixHandler(message)) return;
@@ -26,13 +29,16 @@ export default async function onMessageCreate(message: Message): Promise<void> {
   if (!onCooldown) {
     const baseGained =
       Math.floor(
-        Math.random() * (config.xp.maxPerMessage - config.xp.minPerMessage + 1),
+        Math.random() *
+          (config.xp.maxPerMessage - config.xp.minPerMessage + 1),
       ) + config.xp.minPerMessage;
+
     const multiplier = await getActiveXpMultiplier(message.client, guildId);
-const gained =
-  multiplier === 1
-    ? baseGained
-    : calculateBoostedXp(baseGained, multiplier);
+
+    const gained =
+      multiplier === null
+        ? baseGained
+        : calculateBoostedXp(baseGained, multiplier);
 
     const oldLevel = stats.level;
     stats.xp += gained;
@@ -42,7 +48,15 @@ const gained =
     if (stats.level > oldLevel) {
       const guildConfig = await getGuildConfig(message.guildId!);
       const member = await message.guild.members.fetch(message.author.id);
-      await applyLevelRoles(message.guild, member, oldLevel, stats.level, guildConfig);
+
+      await applyLevelRoles(
+        message.guild,
+        member,
+        oldLevel,
+        stats.level,
+        guildConfig,
+      );
+
       await sendLevelUpNotification(
         message.guild,
         message.author.id,
