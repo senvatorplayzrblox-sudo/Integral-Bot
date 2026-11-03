@@ -286,7 +286,15 @@ function buildStatusEmbed(guild: Guild | null | undefined, event: XpEvent | null
   return new EmbedBuilder()
     .setColor(0x57f287)
     .setTitle(`${rocket} XP OVERDRIVE IS LIVE!`)
-    .setDescription(buildEventDetails(guild, event, "Active").join("\n"));
+    .addFields(
+  { name: "Status", value: "✅ Active", inline: true },
+  { name: "Boost", value: `⚡ ${event.multiplier}× XP`, inline: true },
+  { name: "Duration", value: `⌛ ${formatXpEventDuration(getTotalDurationMs(event))}`, inline: false },
+  { name: "Ends", value: `⏰ ${formatExactTimestamp(event.endsAt)}`, inline: true },
+  { name: "Time Remaining", value: `⏰ ${formatRelativeTimestamp(event.endsAt)}`, inline: true },
+  { name: "Hosted By", value: `👑 <@${event.hostId}>`, inline: false },
+)
+.setFooter({ text: "🔥 Jump in and start stacking XP!" });
 }
 
 function buildAdminComponents(session: AdminSession, active: boolean) {
