@@ -136,6 +136,51 @@ function findGuildEmoji(guild: Guild, candidates: string[], fallback: string): s
 }
 
 export function buildXpEventAnnouncement(
+  function buildXpEventAnnouncementEmbed(
+  guild: Guild,
+  event: Pick<XpEvent, "multiplier" | "endsAt" | "hostId" | "startedAt">,
+): EmbedBuilder {
+  const rocket = findGuildEmoji(guild, ["rocket", "overdrive"], "🚀");
+  const celebration = findGuildEmoji(guild, ["party", "celebration", "shine"], "🎉");
+  const lightning = findGuildEmoji(guild, ["lightning", "bolt"], "⚡");
+  const clock = findGuildEmoji(guild, ["clock", "time"], "⏰");
+  const crown = findGuildEmoji(guild, ["crown", "king"], "👑");
+  const fire = findGuildEmoji(guild, ["fire", "flame"], "🔥");
+  const hourglass = findGuildEmoji(guild, ["hourglass", "duration"], "⌛");
+
+  return new EmbedBuilder()
+    .setColor(0x57f287)
+    .setTitle(`${rocket} XP OVERDRIVE IS LIVE!`)
+    .setDescription(
+      `«${celebration} The XP boost has officially landed!\n` +
+      "Your journey to the next level just got a whole lot faster!",
+    )
+    .addFields(
+      { name: "Status", value: "✅ Active", inline: true },
+      { name: "Boost", value: `${lightning} ${event.multiplier}× XP`, inline: true },
+      {
+        name: "Duration",
+        value: `${hourglass} ${formatXpEventDuration(getTotalDurationMs(event))}`,
+        inline: false,
+      },
+      {
+        name: "Ends",
+        value: `${clock} ${formatExactTimestamp(event.endsAt)}`,
+        inline: true,
+      },
+      {
+        name: "Time Remaining",
+        value: `${clock} ${formatRelativeTimestamp(event.endsAt)}`,
+        inline: true,
+      },
+      {
+        name: "Hosted By",
+        value: `${crown} <@${event.hostId}>`,
+        inline: false,
+      },
+    )
+    .setFooter({ text: `${fire} Jump in and start stacking XP!` });
+}
   guild: Guild,
   event: Pick<XpEvent, "multiplier" | "endsAt" | "hostId" | "startedAt">,
 ): string {
