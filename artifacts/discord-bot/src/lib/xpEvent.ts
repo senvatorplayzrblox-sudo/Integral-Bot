@@ -637,7 +637,7 @@ async function getLiveEvent(
 export async function getActiveXpMultiplier(
   client: Client,
   guildId: string,
-): Promise<number> {
+): Promise<number | null> {
   return getXpEventRuntime(client).getActiveXpMultiplier(guildId);
 }
 
