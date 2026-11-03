@@ -29,7 +29,10 @@ export default async function onMessageCreate(message: Message): Promise<void> {
         Math.random() * (config.xp.maxPerMessage - config.xp.minPerMessage + 1),
       ) + config.xp.minPerMessage;
     const multiplier = await getActiveXpMultiplier(message.client, guildId);
-    const gained = calculateBoostedXp(baseGained, multiplier);
+const gained =
+  multiplier === 1
+    ? baseGained
+    : calculateBoostedXp(baseGained, multiplier);
 
     const oldLevel = stats.level;
     stats.xp += gained;
