@@ -319,8 +319,6 @@ export async function syncAnnouncement(
     return false;
   }
   const content = state === "live"
-    ? buildXpEventAnnouncement(guild!, event)
-    : buildEndedAnnouncement(guild, event, state === "cancelled");
   const existing = event.announcementMessageId
     ? await channel.messages.fetch(event.announcementMessageId).catch(() => null)
     : null;
